@@ -1,7 +1,6 @@
 ﻿using SmartInstaller.Core.Common;
-using SmartInstaller.Core.Entities.Catalog;
 
-namespace SmartInstaller.Core.Entities;
+namespace SmartInstaller.Core.Entities.Catalog;
 
 public class Tag : BaseEntity
 {
