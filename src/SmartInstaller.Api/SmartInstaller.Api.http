@@ -1,0 +1,6 @@
+@SmartInstaller.Api_HostAddress = http://localhost:5272
+
+GET {{SmartInstaller.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

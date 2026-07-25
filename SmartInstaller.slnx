@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SmartInstaller.Agent/SmartInstaller.Agent.csproj" />
+    <Project Path="src/SmartInstaller.Api/SmartInstaller.Api.csproj" />
+    <Project Path="src/SmartInstaller.Core/SmartInstaller.Core.csproj" />
+    <Project Path="src/SmartInstaller.Data/SmartInstaller.Data.csproj" />
+    <Project Path="src/SmartInstaller.Services/SmartInstaller.Services.csproj" />
+    <Project Path="src/SmartInstaller.Web/SmartInstaller.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SmartInstaller.Tests/SmartInstaller.Tests.csproj" />
+  </Folder>
+</Solution>
