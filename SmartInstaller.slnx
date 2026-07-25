@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/docs/" />
   <Folder Name="/src/">
     <Project Path="src/SmartInstaller.Agent/SmartInstaller.Agent.csproj" />
     <Project Path="src/SmartInstaller.Api/SmartInstaller.Api.csproj" />

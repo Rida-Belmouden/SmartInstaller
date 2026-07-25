@@ -1,16 +1,17 @@
-﻿namespace SmartInstaller.Core.Entities;
+﻿using SmartInstaller.Core.Common;
+using SmartInstaller.Core.Entities.Catalog;
 
-public class InstallerProfile
+namespace SmartInstaller.Core.Entities.Installer;
+
+public class InstallerProfile : BaseEntity
 {
-    public int Id { get; set; }
-
     public int ApplicationVersionId { get; set; }
 
     public int InstallerTypeId { get; set; }
 
     public int ArchitectureId { get; set; }
 
-    public string DownloadUrl { get; set; } = string.Empty;
+    public string DownloadUrl { get; set; } = "";
 
     public string? Sha256 { get; set; }
 
@@ -22,9 +23,6 @@ public class InstallerProfile
 
     public bool RequiresAdministrator { get; set; } = true;
 
-    public bool IsActive { get; set; } = true;
-
-    // Navigation
     public ApplicationVersion ApplicationVersion { get; set; } = null!;
 
     public InstallerType InstallerType { get; set; } = null!;

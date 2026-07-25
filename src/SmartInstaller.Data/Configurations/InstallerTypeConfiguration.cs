@@ -1,6 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SmartInstaller.Core.Entities;
+using SmartInstaller.Core.Entities.Installer;
 
 namespace SmartInstaller.Data.Configurations;
 

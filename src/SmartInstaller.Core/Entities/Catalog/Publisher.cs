@@ -1,10 +1,10 @@
-﻿namespace SmartInstaller.Core.Entities;
+﻿using SmartInstaller.Core.Common;
 
-public class Publisher
+namespace SmartInstaller.Core.Entities.Catalog;
+
+public class Publisher : BaseEntity
 {
-    public int Id { get; set; }
-
-    public string Name { get; set; } = string.Empty;
+    public string Name { get; set; } = "";
 
     public string? Website { get; set; }
 
@@ -12,7 +12,6 @@ public class Publisher
 
     public bool IsVerified { get; set; }
 
-    // Navigation
     public ICollection<SoftwareApplication> Applications { get; set; }
         = new List<SoftwareApplication>();
 }
