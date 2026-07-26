@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmartInstaller.Core.Entities.Catalog;
 
-namespace SmartInstaller.Data.Configurations;
+namespace SmartInstaller.Data.Configurations.Catalog;
 
 public class PublisherConfiguration : IEntityTypeConfiguration<Publisher>
 {

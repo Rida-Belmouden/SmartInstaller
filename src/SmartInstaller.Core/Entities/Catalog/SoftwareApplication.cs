@@ -1,6 +1,4 @@
 using SmartInstaller.Core.Common;
-using SmartInstaller.Core.Entities.Installer;
-using System.Runtime.InteropServices;
 
 namespace SmartInstaller.Core.Entities.Catalog;
 

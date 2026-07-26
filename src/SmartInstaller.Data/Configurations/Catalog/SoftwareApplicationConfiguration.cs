@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmartInstaller.Core.Entities.Catalog;
 
-namespace SmartInstaller.Data.Configurations;
+namespace SmartInstaller.Data.Configurations.Catalog;
 
 public class SoftwareApplicationConfiguration
     : IEntityTypeConfiguration<SoftwareApplication>
@@ -49,5 +49,12 @@ public class SoftwareApplicationConfiguration
             .WithOne(version => version.SoftwareApplication)
             .HasForeignKey(version => version.SoftwareApplicationId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(application => application.Platform)
+            .WithMany(platform => platform.Applications)
+            .HasForeignKey(application => application.PlatformId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(application => application.PlatformId);
     }
 }

@@ -2,7 +2,7 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmartInstaller.Core.Entities.Installer;
 
-namespace SmartInstaller.Data.Configurations;
+namespace SmartInstaller.Data.Configurations.Installer;
 
 public class InstallerProfileConfiguration
     : IEntityTypeConfiguration<InstallerProfile>
