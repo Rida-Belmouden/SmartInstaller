@@ -75,7 +75,6 @@ public sealed class CreateApplicationVersionHandler(
             foreach (var currentVersion in currentLatestVersions)
             {
                 currentVersion.IsLatest = false;
-                currentVersion.UpdatedAt = DateTime.UtcNow;
             }
         }
 
@@ -84,7 +83,8 @@ public sealed class CreateApplicationVersionHandler(
             SoftwareApplicationId = application.Id,
             Version = normalizedVersion,
             ReleaseDate = command.ReleaseDate,
-            IsLatest = shouldBeLatest
+            IsLatest = shouldBeLatest,
+            IsActive = true
         };
 
         dbContext.ApplicationVersions.Add(applicationVersion);

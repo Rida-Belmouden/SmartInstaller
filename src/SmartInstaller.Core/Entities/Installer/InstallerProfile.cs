@@ -23,6 +23,10 @@ public class InstallerProfile : BaseEntity
 
     public bool RequiresAdministrator { get; set; } = true;
 
+    public bool IsPortable { get; set; }
+
+    public bool IsEnabled { get; set; } = true;
+
     public ApplicationVersion ApplicationVersion { get; set; } = null!;
 
     public InstallerType InstallerType { get; set; } = null!;

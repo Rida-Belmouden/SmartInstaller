@@ -4,62 +4,59 @@ using SmartInstaller.Core.Entities.Installer;
 
 namespace SmartInstaller.Data.Configurations.Installer;
 
-public class InstallerProfileConfiguration
+public sealed class InstallerProfileConfiguration
     : IEntityTypeConfiguration<InstallerProfile>
 {
-    public void Configure(EntityTypeBuilder<InstallerProfile> builder)
+    public void Configure(
+        EntityTypeBuilder<InstallerProfile> builder)
     {
         builder.ToTable("InstallerProfiles");
 
-        builder.HasKey(profile => profile.Id);
+        builder.HasKey(x => x.Id);
 
-        builder.Property(profile => profile.DownloadUrl)
+        builder.Property(x => x.DownloadUrl)
             .IsRequired()
-            .HasMaxLength(2000);
+            .HasMaxLength(2048);
 
-        builder.Property(profile => profile.Sha256)
-            .HasMaxLength(64)
-            .IsFixedLength();
+        builder.Property(x => x.Sha256)
+            .HasMaxLength(64);
 
-        builder.Property(profile => profile.SilentInstallArguments)
+        builder.Property(x => x.SilentInstallArguments)
             .HasMaxLength(1000);
 
-        builder.Property(profile => profile.SilentUninstallArguments)
+        builder.Property(x => x.SilentUninstallArguments)
             .HasMaxLength(1000);
 
-        builder.Property(profile => profile.RequiresAdministrator)
+        builder.Property(x => x.RequiresAdministrator)
             .HasDefaultValue(true);
 
-        builder.Property(profile => profile.IsActive)
+        builder.Property(x => x.IsPortable)
+            .HasDefaultValue(false);
+
+        builder.Property(x => x.IsEnabled)
             .HasDefaultValue(true);
 
-        builder.HasIndex(profile => profile.ApplicationVersionId);
-
-        builder.HasIndex(profile => profile.InstallerTypeId);
-
-        builder.HasIndex(profile => profile.ArchitectureId);
-
-        builder.HasIndex(profile => new
-        {
-            profile.ApplicationVersionId,
-            profile.InstallerTypeId,
-            profile.ArchitectureId
-        })
-        .IsUnique();
-
-        builder.HasOne(profile => profile.ApplicationVersion)
-            .WithMany(version => version.InstallerProfiles)
-            .HasForeignKey(profile => profile.ApplicationVersionId)
+        builder.HasOne(x => x.ApplicationVersion)
+            .WithMany(x => x.InstallerProfiles)
+            .HasForeignKey(x => x.ApplicationVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasOne(profile => profile.InstallerType)
-            .WithMany(type => type.InstallerProfiles)
-            .HasForeignKey(profile => profile.InstallerTypeId)
+        builder.HasOne(x => x.InstallerType)
+            .WithMany(x => x.InstallerProfiles)
+            .HasForeignKey(x => x.InstallerTypeId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne(profile => profile.Architecture)
-            .WithMany(architecture => architecture.InstallerProfiles)
-            .HasForeignKey(profile => profile.ArchitectureId)
+        builder.HasOne(x => x.Architecture)
+            .WithMany(x => x.InstallerProfiles)
+            .HasForeignKey(x => x.ArchitectureId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => new
+        {
+            x.ApplicationVersionId,
+            x.InstallerTypeId,
+            x.ArchitectureId
+        })
+            .IsUnique();
     }
 }

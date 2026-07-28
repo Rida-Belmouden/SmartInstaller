@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SmartInstaller.Core.Common;
 using SmartInstaller.Core.Entities.Catalog;
 using SmartInstaller.Core.Entities.Installer;
 using SmartInstaller.Data.Seed;
@@ -33,5 +34,68 @@ public class ApplicationDbContext : DbContext
             typeof(ApplicationDbContext).Assembly);
 
         DatabaseSeed.Seed(modelBuilder);
+    }
+
+    public override int SaveChanges()
+    {
+        ApplyAuditValues();
+        return base.SaveChanges();
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ApplyAuditValues();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ApplyAuditValues();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        ApplyAuditValues();
+
+        return base.SaveChangesAsync(
+            acceptAllChangesOnSuccess,
+            cancellationToken);
+    }
+
+    private void ApplyAuditValues()
+    {
+        var utcNow = DateTime.UtcNow;
+
+        foreach (var entry in ChangeTracker.Entries<BaseEntity>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                if (entry.Entity.PublicId == Guid.Empty)
+                {
+                    entry.Entity.PublicId = Guid.NewGuid();
+                }
+
+                if (entry.Entity.CreatedAt == default)
+                {
+                    entry.Entity.CreatedAt = utcNow;
+                }
+
+                entry.Entity.UpdatedAt = null;
+            }
+            else if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = utcNow;
+
+                entry.Property(entity => entity.CreatedAt)
+                    .IsModified = false;
+
+                entry.Property(entity => entity.PublicId)
+                    .IsModified = false;
+            }
+        }
     }
 }

@@ -4,31 +4,24 @@ using SmartInstaller.Core.Entities.Installer;
 
 namespace SmartInstaller.Data.Configurations.Installer;
 
-public class InstallerTypeConfiguration
+public sealed class InstallerTypeConfiguration
     : IEntityTypeConfiguration<InstallerType>
 {
-    public void Configure(EntityTypeBuilder<InstallerType> builder)
+    public void Configure(
+        EntityTypeBuilder<InstallerType> builder)
     {
         builder.ToTable("InstallerTypes");
 
-        builder.HasKey(installerType => installerType.Id);
+        builder.HasKey(x => x.Id);
 
-        builder.Property(installerType => installerType.Name)
+        builder.Property(x => x.Name)
             .IsRequired()
-            .HasMaxLength(30);
+            .HasMaxLength(50);
 
-        builder.Property(installerType => installerType.Description)
-            .HasMaxLength(300);
+        builder.Property(x => x.Description)
+            .HasMaxLength(250);
 
-        builder.Property(installerType => installerType.IsActive)
-            .HasDefaultValue(true);
-
-        builder.HasIndex(installerType => installerType.Name)
+        builder.HasIndex(x => x.Name)
             .IsUnique();
-
-        builder.HasMany(installerType => installerType.InstallerProfiles)
-            .WithOne(profile => profile.InstallerType)
-            .HasForeignKey(profile => profile.InstallerTypeId)
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }
