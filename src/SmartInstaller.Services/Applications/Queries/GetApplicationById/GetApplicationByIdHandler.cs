@@ -47,7 +47,8 @@ public sealed class GetApplicationByIdHandler(
                             version.PublicId,
                             version.Version,
                             version.ReleaseDate,
-                            version.IsLatest))
+                            version.IsLatest,
+                            version.IsActive))
                     .ToList()))
             .SingleOrDefaultAsync(cancellationToken);
     }

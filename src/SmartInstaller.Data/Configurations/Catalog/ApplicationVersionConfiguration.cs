@@ -40,5 +40,12 @@ public sealed class ApplicationVersionConfiguration
             .WithOne(x => x.ApplicationVersion)
             .HasForeignKey(x => x.ApplicationVersionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(x => new
+            {
+                x.SoftwareApplicationId,
+                x.Version
+            })
+            .IsUnique();
     }
 }
