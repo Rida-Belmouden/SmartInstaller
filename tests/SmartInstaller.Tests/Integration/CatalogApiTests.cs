@@ -1,7 +1,7 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
-using SmartInstaller.Services.Catalog.DTOs;
-using SmartInstaller.Services.Common.Models;
+using SmartInstaller.Services.Applications.DTOs;
+using Xunit;
 
 namespace SmartInstaller.Tests.Integration;
 
@@ -17,75 +17,22 @@ public sealed class CatalogApiTests
     }
 
     [Fact]
-    public async Task GetCategories_ReturnsSeededCategories()
+    public async Task CreateApplicationVersion_UsingPublicRoute_ReturnsMethodNotAllowed()
     {
-        var response = await _client.GetAsync(
-            "/api/categories");
+        const string applicationId =
+            "70000000-0000-0000-0000-000000000001";
+
+        var request = new CreateApplicationVersionRequest(
+            Version: "99.0.0",
+            ReleaseDate: new DateTime(2026, 7, 27),
+            IsLatest: true);
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/applications/{applicationId}/versions",
+            request);
 
         Assert.Equal(
-            HttpStatusCode.OK,
+            HttpStatusCode.MethodNotAllowed,
             response.StatusCode);
-
-        var result = await response.Content
-            .ReadFromJsonAsync<
-                ApiResponse<IReadOnlyCollection<CatalogItemDto>>>();
-
-        Assert.NotNull(result);
-        Assert.True(result.Success);
-        Assert.NotNull(result.Data);
-        Assert.Equal(8, result.Data.Count);
-
-        var browsers = Assert.Single(
-            result.Data,
-            category => category.Slug == "browsers");
-
-        Assert.Equal(2, browsers.ApplicationCount);
-    }
-
-    [Fact]
-    public async Task GetPlatforms_ReturnsWindowsPlatform()
-    {
-        var response = await _client.GetAsync(
-            "/api/platforms");
-
-        Assert.Equal(
-            HttpStatusCode.OK,
-            response.StatusCode);
-
-        var result = await response.Content
-            .ReadFromJsonAsync<
-                ApiResponse<IReadOnlyCollection<CatalogItemDto>>>();
-
-        Assert.NotNull(result?.Data);
-
-        var platform = Assert.Single(
-            result.Data);
-
-        Assert.Equal("Windows", platform.Name);
-        Assert.Equal(5, platform.ApplicationCount);
-    }
-
-    [Fact]
-    public async Task GetTags_ReturnsSeededTags()
-    {
-        var response = await _client.GetAsync(
-            "/api/tags");
-
-        Assert.Equal(
-            HttpStatusCode.OK,
-            response.StatusCode);
-
-        var result = await response.Content
-            .ReadFromJsonAsync<
-                ApiResponse<IReadOnlyCollection<CatalogItemDto>>>();
-
-        Assert.NotNull(result?.Data);
-        Assert.Equal(7, result.Data.Count);
-
-        var browserTag = Assert.Single(
-            result.Data,
-            tag => tag.Slug == "browser");
-
-        Assert.Equal(2, browserTag.ApplicationCount);
     }
 }

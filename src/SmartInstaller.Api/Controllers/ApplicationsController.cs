@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using SmartInstaller.Services.Applications.DTOs;
 using SmartInstaller.Services.Applications.Queries.GetApplicationById;
 using SmartInstaller.Services.Applications.Queries.GetApplications;
+using SmartInstaller.Services.Applications.Queries.GetApplicationVersions;
 using SmartInstaller.Services.Common.Models;
 
 namespace SmartInstaller.Api.Controllers;
@@ -10,15 +11,16 @@ namespace SmartInstaller.Api.Controllers;
 [Route("api/applications")]
 public sealed class ApplicationsController(
     IGetApplicationsHandler getApplicationsHandler,
-    IGetApplicationByIdHandler getApplicationByIdHandler)
+    IGetApplicationByIdHandler getApplicationByIdHandler,
+    IGetApplicationVersionsHandler getApplicationVersionsHandler)
     : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType(
         typeof(ApiResponse<PagedResult<ApplicationListItemDto>>),
         StatusCodes.Status200OK)]
-    public async Task<ActionResult<
-        ApiResponse<PagedResult<ApplicationListItemDto>>>> GetAll(
+    public async Task<
+        ActionResult<ApiResponse<PagedResult<ApplicationListItemDto>>>> GetAll(
         [FromQuery] GetApplicationsQuery query,
         CancellationToken cancellationToken)
     {
@@ -38,8 +40,8 @@ public sealed class ApplicationsController(
     [ProducesResponseType(
         typeof(ApiResponse<ApplicationDetailsDto>),
         StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<
-        ApiResponse<ApplicationDetailsDto>>> GetById(
+    public async Task<
+        ActionResult<ApiResponse<ApplicationDetailsDto>>> GetById(
         Guid publicId,
         CancellationToken cancellationToken)
     {
@@ -57,5 +59,35 @@ public sealed class ApplicationsController(
 
         return Ok(
             ApiResponse<ApplicationDetailsDto>.Ok(application));
+    }
+
+    [HttpGet("{publicId:guid}/versions")]
+    [ProducesResponseType(
+        typeof(ApiResponse<IReadOnlyList<ApplicationVersionDto>>),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(
+        typeof(ApiResponse<IReadOnlyList<ApplicationVersionDto>>),
+        StatusCodes.Status404NotFound)]
+    public async Task<
+        ActionResult<ApiResponse<IReadOnlyList<ApplicationVersionDto>>>>
+        GetVersions(
+            Guid publicId,
+            CancellationToken cancellationToken)
+    {
+        var versions =
+            await getApplicationVersionsHandler.HandleAsync(
+                new GetApplicationVersionsQuery(publicId),
+                cancellationToken);
+
+        if (versions is null)
+        {
+            return NotFound(
+                ApiResponse<IReadOnlyList<ApplicationVersionDto>>
+                    .Failure("Application was not found."));
+        }
+
+        return Ok(
+            ApiResponse<IReadOnlyList<ApplicationVersionDto>>
+                .Ok(versions));
     }
 }
