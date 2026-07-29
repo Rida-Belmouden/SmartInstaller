@@ -1,4 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using SmartInstaller.Services.Agent.Queries.CheckUpdates;
+using SmartInstaller.Services.Agent.Queries.GetAgentCatalog;
+using SmartInstaller.Services.Agent.Queries.GetInstallerManifest;
 using SmartInstaller.Services.Applications.Commands.CreateApplicationVersion;
 using SmartInstaller.Services.Applications.Commands.DeleteApplicationVersion;
 using SmartInstaller.Services.Applications.Commands.SetLatestApplicationVersion;
@@ -86,6 +89,19 @@ public static class DependencyInjection
         services.AddScoped<
             IDeactivateInstallerProfileHandler,
             DeactivateInstallerProfileHandler>();
+
+
+        services.AddScoped<
+            IGetAgentCatalogHandler,
+            GetAgentCatalogHandler>();
+
+        services.AddScoped<
+            ICheckUpdatesHandler,
+            CheckUpdatesHandler>();
+
+        services.AddScoped<
+            IGetInstallerManifestHandler,
+            GetInstallerManifestHandler>();
 
         return services;
     }
