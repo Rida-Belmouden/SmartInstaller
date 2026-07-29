@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using SmartInstaller.Services.Applications.Commands.CreateApplicationVersion;
 using SmartInstaller.Services.Applications.Commands.DeleteApplicationVersion;
 using SmartInstaller.Services.Applications.Commands.SetLatestApplicationVersion;
@@ -10,6 +10,11 @@ using SmartInstaller.Services.Applications.Queries.GetApplicationVersions;
 using SmartInstaller.Services.Catalog.Queries.GetCategories;
 using SmartInstaller.Services.Catalog.Queries.GetPlatforms;
 using SmartInstaller.Services.Catalog.Queries.GetTags;
+using SmartInstaller.Services.InstallerProfiles.Commands.CreateInstallerProfile;
+using SmartInstaller.Services.InstallerProfiles.Commands.DeactivateInstallerProfile;
+using SmartInstaller.Services.InstallerProfiles.Commands.UpdateInstallerProfile;
+using SmartInstaller.Services.InstallerProfiles.Queries.GetInstallerProfileById;
+using SmartInstaller.Services.InstallerProfiles.Queries.GetInstallerProfiles;
 
 namespace SmartInstaller.Services;
 
@@ -61,6 +66,26 @@ public static class DependencyInjection
         services.AddScoped<
             IDeleteApplicationVersionHandler,
             DeleteApplicationVersionHandler>();
+
+        services.AddScoped<
+            IGetInstallerProfilesHandler,
+            GetInstallerProfilesHandler>();
+
+        services.AddScoped<
+            IGetInstallerProfileByIdHandler,
+            GetInstallerProfileByIdHandler>();
+
+        services.AddScoped<
+            ICreateInstallerProfileHandler,
+            CreateInstallerProfileHandler>();
+
+        services.AddScoped<
+            IUpdateInstallerProfileHandler,
+            UpdateInstallerProfileHandler>();
+
+        services.AddScoped<
+            IDeactivateInstallerProfileHandler,
+            DeactivateInstallerProfileHandler>();
 
         return services;
     }
