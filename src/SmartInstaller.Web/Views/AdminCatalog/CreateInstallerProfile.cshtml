@@ -1,0 +1,134 @@
+@using SmartInstaller.Web.Models.AdminCatalog
+@model SmartInstaller.Web.Models.AdminCatalog.CreateInstallerProfileViewModel
+@{
+    ViewData["Title"] = "Create installer profile";
+    var installerTypes =
+        (IReadOnlyList<ReferenceOption>)ViewBag.InstallerTypes;
+    var architectures =
+        (IReadOnlyList<ReferenceOption>)ViewBag.Architectures;
+}
+
+<div class="form-shell wide">
+    <a asp-action="Application"
+       asp-route-publicId="@Model.ApplicationPublicId"
+       class="back-link">← @Model.ApplicationName</a>
+
+    <h1>Add installer profile</h1>
+    <p>Version @Model.Version</p>
+
+    <form method="post" class="admin-form two-columns">
+        @Html.AntiForgeryToken()
+        <div asp-validation-summary="ModelOnly"
+             class="text-danger form-span"></div>
+
+        <input asp-for="ApplicationName" type="hidden" />
+        <input asp-for="Version" type="hidden" />
+
+        <div class="form-group">
+            <label asp-for="InstallerTypePublicId">Installer type</label>
+            <select asp-for="InstallerTypePublicId"
+                    class="form-select">
+                @foreach (var option in installerTypes)
+                {
+                    <option value="@option.PublicId">@option.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="ArchitecturePublicId">Architecture</label>
+            <select asp-for="ArchitecturePublicId"
+                    class="form-select">
+                @foreach (var option in architectures)
+                {
+                    <option value="@option.PublicId">@option.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="form-group form-span">
+            <label asp-for="DownloadUrl">Download URL</label>
+            <input asp-for="DownloadUrl"
+                   class="form-control"
+                   placeholder="https://example.com/setup.exe" />
+            <span asp-validation-for="DownloadUrl"
+                  class="text-danger"></span>
+        </div>
+
+        <div class="form-group form-span">
+            <label asp-for="Sha256">SHA-256 (optional)</label>
+            <input asp-for="Sha256"
+                   class="form-control"
+                   placeholder="64 hexadecimal characters" />
+            <span asp-validation-for="Sha256"
+                  class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="FileSizeBytes">File size (bytes)</label>
+            <input asp-for="FileSizeBytes"
+                   class="form-control" />
+            <span asp-validation-for="FileSizeBytes"
+                  class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="SilentInstallArguments">
+                Silent install arguments
+            </label>
+            <input asp-for="SilentInstallArguments"
+                   class="form-control"
+                   placeholder="/S" />
+        </div>
+
+        <div class="form-group">
+            <label asp-for="SilentUninstallArguments">
+                Silent uninstall arguments
+            </label>
+            <input asp-for="SilentUninstallArguments"
+                   class="form-control" />
+        </div>
+
+        <div class="switch-stack">
+            <div class="form-check form-switch">
+                <input asp-for="RequiresAdministrator"
+                       class="form-check-input" />
+                <label asp-for="RequiresAdministrator"
+                       class="form-check-label">
+                    Requires administrator
+                </label>
+            </div>
+
+            <div class="form-check form-switch">
+                <input asp-for="IsPortable"
+                       class="form-check-input" />
+                <label asp-for="IsPortable"
+                       class="form-check-label">
+                    Portable package
+                </label>
+            </div>
+
+            <div class="form-check form-switch">
+                <input asp-for="IsEnabled"
+                       class="form-check-input" />
+                <label asp-for="IsEnabled"
+                       class="form-check-label">
+                    Enabled
+                </label>
+            </div>
+        </div>
+
+        <div class="form-actions form-span">
+            <button type="submit" class="btn btn-dark">
+                Create installer profile
+            </button>
+            <a asp-action="Application"
+               asp-route-publicId="@Model.ApplicationPublicId"
+               class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

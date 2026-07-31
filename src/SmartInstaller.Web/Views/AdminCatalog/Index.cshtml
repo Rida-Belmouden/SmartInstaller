@@ -1,0 +1,50 @@
+@model SmartInstaller.Web.Models.AdminCatalog.AdminCatalogIndexViewModel
+@{
+    ViewData["Title"] = "Catalog administration";
+}
+
+<div class="admin-header">
+    <div>
+        <span class="eyebrow">ADMIN DASHBOARD</span>
+        <h1>Application catalog</h1>
+        <p>Manage versions and installer profiles used by SmartInstaller Agent.</p>
+    </div>
+</div>
+
+<form method="get" class="admin-search">
+    <input name="search"
+           value="@Model.Search"
+           placeholder="Search applications..." />
+    <button type="submit" class="btn btn-dark">Search</button>
+    @if (!string.IsNullOrWhiteSpace(Model.Search))
+    {
+        <a asp-action="Index" class="btn btn-outline-secondary">Clear</a>
+    }
+</form>
+
+<div class="admin-grid">
+    @foreach (var application in Model.Applications)
+    {
+        <a class="application-card"
+           asp-action="Application"
+           asp-route-publicId="@application.PublicId">
+            <div class="application-icon">
+                @application.Name.Substring(0, 1).ToUpperInvariant()
+            </div>
+            <div>
+                <h2>@application.Name</h2>
+                <p>@application.Publisher · @application.Category</p>
+                <span class="version-badge">
+                    @(application.LatestVersion ?? "No version")
+                </span>
+            </div>
+        </a>
+    }
+</div>
+
+@if (Model.Applications.Count == 0)
+{
+    <div class="empty-state">
+        No applications matched your search.
+    </div>
+}

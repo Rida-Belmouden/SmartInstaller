@@ -1,0 +1,114 @@
+@model SmartInstaller.Web.Models.AdminCatalog.AdminApplicationViewModel
+@{
+    ViewData["Title"] = Model.Application.Name;
+}
+
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<div class="admin-header">
+    <div>
+        <a asp-action="Index" class="back-link">← Catalog</a>
+        <h1>@Model.Application.Name</h1>
+        <p>@Model.Application.Publisher · @Model.Application.Category</p>
+    </div>
+    <a class="btn btn-dark"
+       asp-action="CreateVersion"
+       asp-route-applicationId="@Model.Application.PublicId">
+        Add version
+    </a>
+</div>
+
+@if (Model.Versions.Count == 0)
+{
+    <div class="empty-state">
+        <h2>No versions yet</h2>
+        <p>Add the first version to make this application available to the Agent.</p>
+    </div>
+}
+
+@foreach (var version in Model.Versions.OrderByDescending(x => x.ReleaseDate))
+{
+    var profiles = Model.ProfilesByVersion.TryGetValue(
+        version.PublicId,
+        out var value)
+        ? value
+        : Array.Empty<SmartInstaller.Web.Models.AdminCatalog.InstallerProfileItem>();
+
+    <section class="version-section">
+        <div class="version-heading">
+            <div>
+                <h2>@version.Version</h2>
+                <span class="status-pill @(version.IsLatest ? "latest" : "")">
+                    @(version.IsLatest ? "Latest" : "Version")
+                </span>
+            </div>
+            <a class="btn btn-outline-dark"
+               asp-action="CreateInstallerProfile"
+               asp-route-applicationId="@Model.Application.PublicId"
+               asp-route-versionId="@version.PublicId">
+                Add installer
+            </a>
+        </div>
+
+        @if (profiles.Count == 0)
+        {
+            <div class="inline-empty">
+                No installer profile. This version will not appear in the Agent catalog.
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table admin-table">
+                    <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Architecture</th>
+                        <th>Download URL</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var profile in profiles)
+                    {
+                        <tr>
+                            <td>@profile.InstallerTypeName</td>
+                            <td>@profile.ArchitectureName</td>
+                            <td class="url-cell">@profile.DownloadUrl</td>
+                            <td>
+                                <span class="status-pill @(profile.IsEnabled ? "enabled" : "")">
+                                    @(profile.IsEnabled ? "Enabled" : "Disabled")
+                                </span>
+                            </td>
+                            <td class="text-end">
+                                <form asp-action="DeactivateProfile"
+                                      asp-route-profileId="@profile.PublicId"
+                                      method="post">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden"
+                                           name="applicationId"
+                                           value="@Model.Application.PublicId" />
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            type="submit"
+                                            onclick="return confirm('Deactivate this installer profile?');">
+                                        Deactivate
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+}

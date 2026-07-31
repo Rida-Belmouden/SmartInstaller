@@ -1,0 +1,56 @@
+@model SmartInstaller.Web.Models.AdminCatalog.CreateVersionViewModel
+@{
+    ViewData["Title"] = "Create version";
+}
+
+<div class="form-shell">
+    <a asp-action="Application"
+       asp-route-publicId="@Model.ApplicationPublicId"
+       class="back-link">← @Model.ApplicationName</a>
+
+    <h1>Add application version</h1>
+    <p>Create a version before adding its installer files.</p>
+
+    <form method="post" class="admin-form">
+        @Html.AntiForgeryToken()
+        <div asp-validation-summary="ModelOnly"
+             class="text-danger"></div>
+
+        <input asp-for="ApplicationName" type="hidden" />
+
+        <div class="form-group">
+            <label asp-for="Version"></label>
+            <input asp-for="Version"
+                   class="form-control"
+                   placeholder="24.09" />
+            <span asp-validation-for="Version"
+                  class="text-danger"></span>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="ReleaseDate"></label>
+            <input asp-for="ReleaseDate"
+                   class="form-control" />
+        </div>
+
+        <div class="form-check form-switch">
+            <input asp-for="IsLatest"
+                   class="form-check-input" />
+            <label asp-for="IsLatest"
+                   class="form-check-label">
+                Mark as latest version
+            </label>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-dark">Create version</button>
+            <a asp-action="Application"
+               asp-route-publicId="@Model.ApplicationPublicId"
+               class="btn btn-outline-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
