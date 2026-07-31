@@ -1,82 +1,58 @@
 # SmartInstaller
 
-> Modern open-source software package manager inspired by Ninite, built with ASP.NET Core, Clean Architecture, and CQRS.
+> An open-source Windows software catalog and update-detection platform built with .NET 10, ASP.NET Core, Entity Framework Core, WPF, Clean Architecture, and CQRS-style application services.
 
-![.NET](https://img.shields.io/badge/.NET-10.0-purple)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Build](https://img.shields.io/badge/Build-Passing-brightgreen)
-![Tests](https://img.shields.io/badge/Tests-35%20Passing-success)
-
----
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
+[![Platform](https://img.shields.io/badge/Agent-Windows-0078D4)](https://www.microsoft.com/windows)
+[![License](https://img.shields.io/badge/License-MIT-2EA44F)](LICENSE)
+![Status](https://img.shields.io/badge/Status-Active%20Development-orange)
 
 ## Overview
 
-SmartInstaller is a modern software installation platform that allows users to discover, install, and keep applications up to date through a clean web interface and a lightweight desktop agent.
+SmartInstaller is a multi-project .NET solution for maintaining a curated software catalog and detecting updates for applications installed on Windows.
 
-The project is designed with scalability, maintainability, and testability in mind using:
+The current implementation provides:
 
-- ASP.NET Core
-- Entity Framework Core
-- Clean Architecture
-- CQRS
-- SQLite / SQL Server
-- xUnit Integration Tests
+- a public catalog API;
+- administrative APIs for application versions and installer profiles;
+- a browser-based catalog administration dashboard;
+- a Windows WPF agent that scans installed software from the Registry;
+- name normalization and catalog matching;
+- update detection based on installed and latest catalog versions;
+- installer manifests containing download and silent-install metadata;
+- automated unit and integration tests.
 
----
+SmartInstaller is inspired by the simplicity of tools such as Ninite, while being designed as an extensible learning and product-development project. The downloader and silent installation engine are **not implemented yet**.
 
-## Features
+## Current capabilities
 
-### Catalog
+### Software catalog
 
-- Application catalog
-- Categories
-- Tags
-- Publishers
-- Search & filtering
+- Seeded application catalog with categories, publishers, platforms, and tags.
+- Search and filtering by text, category, and tag.
+- Application details and version history.
+- Multiple versions per application.
+- Latest-version management.
 
-### Application Versions
+### Installer profiles
 
-- Multiple versions per application
-- Latest version management
-- Release dates
-- Version history
+Each application version can expose one or more installer profiles with:
 
-### Installer Profiles
+- installer type: `EXE`, `MSI`, `MSIX`, or `ZIP`;
+- architecture: `x86`, `x64`, `ARM64`, or `Any`;
+- download URL;
+- optional SHA-256 checksum;
+- optional file size;
+- silent install and uninstall arguments;
+- administrator requirement;
+- portable-package flag;
+- enabled/disabled state.
 
-- Multiple installers per version
-- Architecture support
-  - x86
-  - x64
-  - ARM64
-- Installer type support
-  - EXE
-  - MSI
-  - MSIX
-  - ZIP
-- Silent installation parameters
+Duplicate profiles for the same version, installer type, and architecture are prevented at both the service and database levels.
 
-### API
+### Agent API
 
-Public API
-
-- List applications
-- Search applications
-- Get application details
-- List versions
-- Installer profiles
-
-Admin API
-
-- Create applications
-- Manage versions
-- Manage installer profiles
-
----
-
-
-## Agent API
-
-The Agent API provides the desktop agent with a filtered software catalog, update detection, and secure installer metadata.
+The desktop agent communicates with these endpoints:
 
 ```http
 GET  /api/agent/catalog?architecture=x64
@@ -84,196 +60,375 @@ POST /api/agent/check-updates
 GET  /api/agent/installer-manifest/{installerProfileId}
 ```
 
-The installer manifest includes the download URL, SHA-256 checksum, file size, architecture, installer type, and silent installation arguments.
+The Agent API:
 
-## Desktop Agent
+- filters installers by system architecture;
+- returns the latest active application versions;
+- compares installed versions with catalog versions;
+- returns compatible installer metadata;
+- hides inactive or disabled installer profiles.
 
-The Windows desktop agent can scan installed software from the standard uninstall registry locations:
+### Windows desktop agent
 
-- `HKLM` 64-bit applications
-- `HKLM` 32-bit applications (`WOW6432Node` registry view)
-- `HKCU` per-user applications
+The WPF agent currently supports:
 
-The scanner collects application name, version, publisher, installation location, uninstall command, and installation date. It filters hidden system components, normalizes application names, removes duplicate entries, supports cancellation, and displays the results in a searchable WPF interface.
+- scanning installed applications from standard Windows uninstall Registry locations;
+- reading 32-bit, 64-bit, machine-wide, and per-user entries;
+- collecting application name, version, publisher, install location, uninstall command, and install date;
+- filtering hidden system components;
+- removing duplicate Registry entries;
+- searching the scanned application list;
+- detecting the system architecture;
+- normalizing application names such as `7-Zip 26.01 (x64)` to match catalog entries such as `7-Zip`;
+- connecting to the SmartInstaller API;
+- displaying matched applications and available updates;
+- canceling long-running scan and synchronization operations.
 
-Run the agent:
+### Admin catalog dashboard
+
+The ASP.NET Core MVC application includes an administration dashboard at:
+
+```text
+/admin/catalog
+```
+
+The current dashboard can:
+
+- browse and search seeded applications;
+- view application versions and installer profiles;
+- create an application version;
+- create an installer profile;
+- deactivate an installer profile.
+
+Creating new applications, categories, publishers, and tags from the dashboard is not implemented yet.
+
+## Solution structure
+
+```text
+SmartInstaller/
+├── src/
+│   ├── SmartInstaller.Core/        Domain entities and shared base types
+│   ├── SmartInstaller.Data/        EF Core context, mappings, migrations, and seed data
+│   ├── SmartInstaller.Services/    Commands, queries, DTOs, validation, and handlers
+│   ├── SmartInstaller.Api/         Public, admin, and agent HTTP APIs
+│   ├── SmartInstaller.Web/         ASP.NET Core MVC admin dashboard
+│   ├── SmartInstaller.Agent.Core/  Scanner, matching, API client, and synchronization logic
+│   └── SmartInstaller.Agent/       Windows WPF desktop interface
+├── tests/
+│   └── SmartInstaller.Tests/       Agent unit tests and API integration tests
+├── SmartInstaller.slnx
+├── LICENSE
+└── README.md
+```
+
+## Architecture
+
+```text
+┌──────────────────────────┐
+│ SmartInstaller.Web       │
+│ SmartInstaller.Agent     │
+│ SmartInstaller.Api       │
+└────────────┬─────────────┘
+             │
+             ▼
+┌──────────────────────────┐
+│ Application Services     │
+│ Commands / Queries / DTOs│
+└────────────┬─────────────┘
+             │
+             ▼
+┌──────────────────────────┐
+│ Core Domain              │
+│ Catalog / Installer      │
+└────────────┬─────────────┘
+             │
+             ▼
+┌──────────────────────────┐
+│ Data Access              │
+│ EF Core / SQL Server     │
+└──────────────────────────┘
+```
+
+The Windows-specific scanner and synchronization workflow are isolated in `SmartInstaller.Agent.Core`, while the WPF project is responsible for presentation and user interaction.
+
+## Technology stack
+
+| Area | Technology |
+|---|---|
+| Runtime | .NET 10 |
+| API | ASP.NET Core 10 |
+| Admin UI | ASP.NET Core MVC + Bootstrap |
+| Desktop UI | WPF |
+| Persistence | Entity Framework Core 10 |
+| Development database | SQL Server LocalDB |
+| Integration-test database | SQLite in-memory |
+| Testing | xUnit + `WebApplicationFactory` |
+| Coverage collection | Coverlet |
+
+## Prerequisites
+
+- Windows 10 or Windows 11 for the desktop agent.
+- .NET 10 SDK.
+- SQL Server LocalDB or another SQL Server instance.
+- Git.
+
+The default development connection string uses:
+
+```text
+Server=(localdb)\MSSQLLocalDB;Database=SmartInstallerDb;Trusted_Connection=True;TrustServerCertificate=True;
+```
+
+It is defined in:
+
+```text
+src/SmartInstaller.Api/appsettings.Development.json
+```
+
+## Getting started
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Rida-Belmouden/SmartInstaller.git
+cd SmartInstaller
+```
+
+### 2. Restore and build
+
+```bash
+dotnet restore
+dotnet build SmartInstaller.slnx
+```
+
+### 3. Apply the database migrations
+
+```bash
+dotnet ef database update \
+  --project src/SmartInstaller.Data \
+  --startup-project src/SmartInstaller.Api \
+  --context ApplicationDbContext
+```
+
+On PowerShell, the same command can be written as:
+
+```powershell
+dotnet ef database update `
+  --project src/SmartInstaller.Data `
+  --startup-project src/SmartInstaller.Api `
+  --context ApplicationDbContext
+```
+
+### 4. Start the API
+
+```bash
+dotnet run --project src/SmartInstaller.Api
+```
+
+Default development URLs:
+
+```text
+http://localhost:5272
+https://localhost:7149
+```
+
+OpenAPI is available in Development at:
+
+```text
+http://localhost:5272/openapi/v1.json
+```
+
+### 5. Start the admin dashboard
+
+In a second terminal:
+
+```bash
+dotnet run --project src/SmartInstaller.Web
+```
+
+Then open:
+
+```text
+http://localhost:5267/admin/catalog
+```
+
+The Web project calls the API URL configured in:
+
+```text
+src/SmartInstaller.Web/appsettings.json
+```
+
+### 6. Start the Windows agent
+
+Keep the API running, then start the agent in another terminal:
 
 ```bash
 dotnet run --project src/SmartInstaller.Agent
 ```
 
-> The desktop agent requires Windows.
-
-## Project Structure
+The agent API address is configured in:
 
 ```text
-src/
-│
-├── SmartInstaller.Api
-├── SmartInstaller.Core
-├── SmartInstaller.Data
-├── SmartInstaller.Services
-└── SmartInstaller.Agent
-
-tests/
-
-└── SmartInstaller.Tests
+src/SmartInstaller.Agent/appsettings.json
 ```
 
----
+Default configuration:
 
-## Architecture
-
-```
-Presentation
-        │
-        ▼
-Controllers
-        │
-        ▼
-Application Services (CQRS)
-        │
-        ▼
-Domain
-        │
-        ▼
-Infrastructure (EF Core)
-        │
-        ▼
-Database
+```json
+{
+  "Agent": {
+    "ApiBaseUrl": "http://localhost:5272",
+    "RequestTimeout": "00:00:30"
+  }
+}
 ```
 
----
+In the agent:
 
-## Technologies
+1. Select **Scan applications**.
+2. Select **Check updates**.
+3. Open the **Updates** tab.
 
-| Technology | Version |
-|------------|---------|
-| .NET | 10 |
-| ASP.NET Core | 10 |
-| Entity Framework Core | 10 |
-| SQLite | Latest |
-| SQL Server | Supported |
-| xUnit | Latest |
+An application will only appear in update results when the catalog contains an active latest version and a compatible enabled installer profile.
 
----
+## API summary
 
-## Running
+### Public catalog
 
-```bash
-git clone https://github.com/Rida-Belmouden/SmartInstaller.git
-
-cd SmartInstaller
-
-dotnet restore
-
-dotnet build
-
-dotnet test
-
-dotnet run --project src/SmartInstaller.Api
+```http
+GET /api/applications
+GET /api/applications/{publicId}
+GET /api/applications/{publicId}/versions
+GET /api/versions/{publicId}
+GET /api/categories
+GET /api/platforms
+GET /api/tags
+GET /api/installer-profiles
+GET /api/installer-profiles/{publicId}
 ```
 
----
+### Administrative operations
+
+```http
+POST   /api/admin/applications/{publicId}/versions
+PUT    /api/admin/versions/{publicId}
+PATCH  /api/admin/versions/{publicId}/set-latest
+DELETE /api/admin/versions/{publicId}
+
+POST   /api/admin/installer-profiles
+PUT    /api/admin/installer-profiles/{publicId}
+DELETE /api/admin/installer-profiles/{publicId}
+```
+
+### Agent operations
+
+```http
+GET  /api/agent/catalog
+POST /api/agent/check-updates
+GET  /api/agent/installer-manifest/{installerProfileId}
+```
 
 ## Testing
 
-Current status
-
-```
-Build ✔
-
-Tests ✔
-
-35 / 35 Passing
-```
-
-Run tests
+Run the complete test suite:
 
 ```bash
-dotnet test
+dotnet test SmartInstaller.slnx
 ```
 
----
+The repository currently defines **42 xUnit test cases**, covering:
 
-## Roadmap
+- public catalog queries and filters;
+- application-version creation, update, latest selection, and deletion;
+- installer-profile creation, validation, filtering, update, and deactivation;
+- agent catalog architecture filtering;
+- update detection;
+- installer-manifest retrieval;
+- application-name normalization;
+- installed-application matching and duplicate handling.
 
-### Completed
+The API integration tests run against an isolated SQLite in-memory database through `WebApplicationFactory`.
 
-- Clean Architecture
-- CQRS
-- Applications
-- Categories
-- Tags
-- Versions
-- Installer Profiles
-- Agent API
-- Windows installed-software scanner
-- Integration Tests
+## Database migrations
 
-### In Progress
+The repository includes migrations for:
 
-- Agent API client
-- Update matching engine
-- Download Service
+- the initial catalog schema;
+- expanded catalog entities;
+- catalog schema rebuilding;
+- seeded application catalog data;
+- unique application-version constraints;
+- installer-profile feature flags.
 
-### Planned
+Create a new migration with:
 
-- Authentication
-- User Accounts
-- Package Repository
-- Digital Signature Verification
-- Automatic Updates
-- Web Dashboard
+```bash
+dotnet ef migrations add MigrationName \
+  --project src/SmartInstaller.Data \
+  --startup-project src/SmartInstaller.Api \
+  --context ApplicationDbContext \
+  --output-dir Migrations
+```
 
----
+## Project status
+
+### Implemented
+
+- Catalog domain and database model.
+- Seeded applications, categories, publishers, platforms, and tags.
+- Application-version lifecycle APIs.
+- Installer-profile lifecycle APIs.
+- Agent catalog, update-check, and installer-manifest APIs.
+- Windows installed-software scanner.
+- Name normalization and catalog matching.
+- End-to-end update detection in the WPF agent.
+- Admin catalog dashboard for versions and installer profiles.
+- Unit and integration tests.
+
+### Next milestones
+
+- Download manager with progress, cancellation, retry, and cache support.
+- SHA-256 verification after download.
+- Silent installation engine for EXE, MSI, MSIX, and ZIP packages.
+- Update execution workflow and result reporting.
+- Authentication and authorization for admin endpoints.
+- Full CRUD for applications and catalog reference data.
+- Device inventory and update history.
+- CI workflow and automated release packaging.
+
+## Important limitations
+
+SmartInstaller is currently under active development:
+
+- it detects available updates but does not download or install them yet;
+- admin endpoints are not protected by authentication;
+- the dashboard manages versions and installer profiles for existing seeded applications only;
+- package metadata and download links must be curated by an administrator;
+- production deployment, signing, and hardened security configuration are not yet provided.
 
 ## Contributing
 
 Contributions are welcome.
 
-Please:
+1. Create a feature branch:
 
-- Create a feature branch
-- Write tests
-- Keep the build passing
-- Submit a Pull Request
+   ```bash
+   git checkout -b feature/your-feature
+   ```
 
----
+2. Keep the solution building and add or update tests.
+3. Use clear commit messages.
+4. Open a pull request against `main`.
 
 ## License
 
-MIT License
-
----
+SmartInstaller is released under the [MIT License](LICENSE).
 
 ## Author
 
 **Rida Belmouden**
 
-GitHub
-
-https://github.com/Rida-Belmouden
+- GitHub: [Rida-Belmouden](https://github.com/Rida-Belmouden)
 
 ---
 
-⭐ If you like this project, consider giving it a star.
-
-## Windows Agent
-
-The Windows agent is split into a reusable core library and a WPF presentation layer:
-
-```text
-SmartInstaller.Agent.Core   Scanner, matching, API client, update synchronization
-SmartInstaller.Agent        Windows WPF interface
-```
-
-Start the API first, then run the agent:
-
-```bash
-dotnet run --project src/SmartInstaller.Api
-dotnet run --project src/SmartInstaller.Agent
-```
-
-The API URL is configured in `src/SmartInstaller.Agent/appsettings.json`.
-The agent scans installed Windows software, matches supported applications against the SmartInstaller catalog, and displays available updates.
+If you find the project useful, consider starring the repository.
