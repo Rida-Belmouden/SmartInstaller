@@ -42,7 +42,9 @@ public sealed class AgentApiTests
         Assert.NotNull(result?.Data);
 
         var application = Assert.Single(
-            result.Data.Where(item => item.ApplicationId == Guid.Parse(ApplicationId)));
+            result.Data,
+            item => item.ApplicationId == Guid.Parse(ApplicationId));
+
 
         Assert.Equal("210.0.0", application.LatestVersion);
         Assert.Contains(

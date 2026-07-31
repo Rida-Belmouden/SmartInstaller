@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SmartInstaller.Agent.Core.Configuration;
+using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Services;
 
 namespace SmartInstaller.Agent.Core;
@@ -20,6 +21,7 @@ public static class DependencyInjection
         services.AddSingleton<ISystemArchitectureDetector, SystemArchitectureDetector>();
         services.AddSingleton<IApplicationMatcher, ApplicationMatcher>();
         services.AddSingleton<IUpdateSynchronizationService, UpdateSynchronizationService>();
+        services.AddSingleton<IDownloadManager, DownloadManager>();
 
         services.AddHttpClient<IAgentApiClient, AgentApiClient>((provider, client) =>
         {
