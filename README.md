@@ -5,7 +5,7 @@
 ![.NET](https://img.shields.io/badge/.NET-10.0-purple)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Build](https://img.shields.io/badge/Build-Passing-brightgreen)
-![Tests](https://img.shields.io/badge/Tests-28%20Passing-success)
+![Tests](https://img.shields.io/badge/Tests-35%20Passing-success)
 
 ---
 
@@ -72,6 +72,37 @@ Admin API
 - Manage installer profiles
 
 ---
+
+
+## Agent API
+
+The Agent API provides the desktop agent with a filtered software catalog, update detection, and secure installer metadata.
+
+```http
+GET  /api/agent/catalog?architecture=x64
+POST /api/agent/check-updates
+GET  /api/agent/installer-manifest/{installerProfileId}
+```
+
+The installer manifest includes the download URL, SHA-256 checksum, file size, architecture, installer type, and silent installation arguments.
+
+## Desktop Agent
+
+The Windows desktop agent can scan installed software from the standard uninstall registry locations:
+
+- `HKLM` 64-bit applications
+- `HKLM` 32-bit applications (`WOW6432Node` registry view)
+- `HKCU` per-user applications
+
+The scanner collects application name, version, publisher, installation location, uninstall command, and installation date. It filters hidden system components, normalizes application names, removes duplicate entries, supports cancellation, and displays the results in a searchable WPF interface.
+
+Run the agent:
+
+```bash
+dotnet run --project src/SmartInstaller.Agent
+```
+
+> The desktop agent requires Windows.
 
 ## Project Structure
 
@@ -154,7 +185,7 @@ Build ✔
 
 Tests ✔
 
-28 / 28 Passing
+35 / 35 Passing
 ```
 
 Run tests
@@ -176,13 +207,15 @@ dotnet test
 - Tags
 - Versions
 - Installer Profiles
+- Agent API
+- Windows installed-software scanner
 - Integration Tests
 
 ### In Progress
 
-- Desktop Agent
+- Agent API client
+- Update matching engine
 - Download Service
-- Update Detection
 
 ### Planned
 
@@ -225,3 +258,22 @@ https://github.com/Rida-Belmouden
 ---
 
 ⭐ If you like this project, consider giving it a star.
+
+## Windows Agent
+
+The Windows agent is split into a reusable core library and a WPF presentation layer:
+
+```text
+SmartInstaller.Agent.Core   Scanner, matching, API client, update synchronization
+SmartInstaller.Agent        Windows WPF interface
+```
+
+Start the API first, then run the agent:
+
+```bash
+dotnet run --project src/SmartInstaller.Api
+dotnet run --project src/SmartInstaller.Agent
+```
+
+The API URL is configured in `src/SmartInstaller.Agent/appsettings.json`.
+The agent scans installed Windows software, matches supported applications against the SmartInstaller catalog, and displays available updates.

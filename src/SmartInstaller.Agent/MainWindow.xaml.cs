@@ -1,88 +1,133 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
-using SmartInstaller.Agent.Models;
-using SmartInstaller.Agent.Services;
+using SmartInstaller.Agent.Core.Models;
+using SmartInstaller.Agent.Core.Services;
 
 namespace SmartInstaller.Agent;
 
 public partial class MainWindow : Window
 {
     private readonly IInstalledSoftwareScanner _scanner;
+    private readonly IUpdateSynchronizationService _synchronizationService;
     private readonly ObservableCollection<InstalledApplication> _applications = [];
+    private readonly ObservableCollection<UpdateRow> _updates = [];
     private readonly ICollectionView _applicationsView;
-    private CancellationTokenSource? _scanCancellationTokenSource;
+    private CancellationTokenSource? _operationCancellationTokenSource;
 
-    public MainWindow()
+    public MainWindow(
+        IInstalledSoftwareScanner scanner,
+        IUpdateSynchronizationService synchronizationService,
+        ISystemArchitectureDetector architectureDetector)
     {
         InitializeComponent();
-
-        var normalizer = new ApplicationNameNormalizer();
-        _scanner = new InstalledSoftwareScanner(normalizer);
-
-        var architectureDetector = new SystemArchitectureDetector();
+        _scanner = scanner;
+        _synchronizationService = synchronizationService;
         ArchitectureText.Text = architectureDetector.Detect();
-
         ApplicationsGrid.ItemsSource = _applications;
+        UpdatesGrid.ItemsSource = _updates;
         _applicationsView = CollectionViewSource.GetDefaultView(_applications);
         _applicationsView.Filter = FilterApplication;
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e)
     {
-        _scanCancellationTokenSource?.Dispose();
-        _scanCancellationTokenSource = new CancellationTokenSource();
-
-        SetScanningState(isScanning: true);
-        StatusText.Text = "Scanning the Windows registry...";
+        BeginOperation("Scanning the Windows registry...");
 
         try
         {
             var applications = await _scanner.ScanAsync(
-                _scanCancellationTokenSource.Token);
+                _operationCancellationTokenSource!.Token);
 
             _applications.Clear();
-
             foreach (var application in applications)
             {
                 _applications.Add(application);
             }
 
+            _updates.Clear();
+            UpdatesTab.Header = "Updates (0)";
             RefreshView();
             StatusText.Text = $"Scan completed. Found {applications.Count} applications.";
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text = "Scan canceled.";
+            StatusText.Text = "Operation canceled.";
         }
         catch (Exception exception)
         {
-            StatusText.Text = "The scan failed.";
-
-            MessageBox.Show(
-                this,
-                exception.Message,
-                "SmartInstaller Agent",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            ShowError("The scan failed.", exception);
         }
         finally
         {
-            SetScanningState(isScanning: false);
+            EndOperation();
         }
     }
 
-    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
     {
-        _scanCancellationTokenSource?.Cancel();
+        BeginOperation("Connecting to the SmartInstaller API...");
+
+        try
+        {
+            var result = await _synchronizationService.CheckUpdatesAsync(
+                _applications.ToArray(),
+                _operationCancellationTokenSource!.Token);
+
+            _updates.Clear();
+            foreach (var item in result.Items)
+            {
+                _updates.Add(new UpdateRow(
+                    item.ApplicationName,
+                    item.InstalledVersion,
+                    item.LatestVersion,
+                    item.UpdateAvailable ? "Update available" : "Up to date"));
+            }
+
+            UpdatesTab.Header = $"Updates ({result.UpdateCount})";
+            StatusText.Text = result.MatchedApplicationCount == 0
+                ? "No installed applications matched the current SmartInstaller catalog."
+                : $"Matched {result.MatchedApplicationCount} applications. " +
+                  $"Found {result.UpdateCount} updates.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Operation canceled.";
+        }
+        catch (HttpRequestException exception)
+        {
+            ShowError(
+                "Could not connect to the SmartInstaller API. Make sure the API is running and the URL in appsettings.json is correct.",
+                exception);
+        }
+        catch (Exception exception)
+        {
+            ShowError("The update check failed.", exception);
+        }
+        finally
+        {
+            EndOperation();
+        }
     }
 
-    private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    private void BeginOperation(string status)
     {
-        RefreshView();
+        _operationCancellationTokenSource?.Dispose();
+        _operationCancellationTokenSource = new CancellationTokenSource();
+        SetBusyState(true);
+        StatusText.Text = status;
     }
+
+    private void EndOperation() => SetBusyState(false);
+
+    private void CancelButton_Click(object sender, RoutedEventArgs e) =>
+        _operationCancellationTokenSource?.Cancel();
+
+    private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        RefreshView();
 
     private bool FilterApplication(object item)
     {
@@ -92,13 +137,8 @@ public partial class MainWindow : Window
         }
 
         var search = SearchTextBox.Text.Trim();
-
-        if (string.IsNullOrWhiteSpace(search))
-        {
-            return true;
-        }
-
-        return Contains(application.Name, search) ||
+        return string.IsNullOrWhiteSpace(search) ||
+               Contains(application.Name, search) ||
                Contains(application.Version, search) ||
                Contains(application.Publisher, search);
     }
@@ -112,24 +152,38 @@ public partial class MainWindow : Window
         CountText.Text = $"{_applicationsView.Cast<object>().Count()} applications";
     }
 
-    private void SetScanningState(bool isScanning)
+    private void SetBusyState(bool isBusy)
     {
-        ScanButton.IsEnabled = !isScanning;
-        CancelButton.IsEnabled = isScanning;
-        SearchTextBox.IsEnabled = !isScanning;
+        ScanButton.IsEnabled = !isBusy;
+        CheckUpdatesButton.IsEnabled = !isBusy && _applications.Count > 0;
+        CancelButton.IsEnabled = isBusy;
+        SearchTextBox.IsEnabled = !isBusy;
     }
 
-    private void ApplicationsGrid_Sorting(
-        object sender,
-        DataGridSortingEventArgs e)
+    private void ShowError(string message, Exception exception)
     {
-        StatusText.Text = $"Sorted by {e.Column.Header}.";
+        StatusText.Text = message;
+        MessageBox.Show(
+            this,
+            $"{message}\n\n{exception.Message}",
+            "SmartInstaller Agent",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
+
+    private void ApplicationsGrid_Sorting(object sender, DataGridSortingEventArgs e) =>
+        StatusText.Text = $"Sorted by {e.Column.Header}.";
 
     protected override void OnClosed(EventArgs e)
     {
-        _scanCancellationTokenSource?.Cancel();
-        _scanCancellationTokenSource?.Dispose();
+        _operationCancellationTokenSource?.Cancel();
+        _operationCancellationTokenSource?.Dispose();
         base.OnClosed(e);
     }
+
+    private sealed record UpdateRow(
+        string ApplicationName,
+        string InstalledVersion,
+        string LatestVersion,
+        string Status);
 }

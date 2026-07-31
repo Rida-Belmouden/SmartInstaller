@@ -1,7 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net10.0</TargetFramework>
+		<TargetFramework>net10.0-windows</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<IsPackable>false</IsPackable>
@@ -58,6 +58,9 @@
 
 		<ProjectReference
 		  Include="..\..\src\SmartInstaller.Services\SmartInstaller.Services.csproj" />
+
+		<ProjectReference
+		  Include="..\..\src\SmartInstaller.Agent.Core\SmartInstaller.Agent.Core.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
