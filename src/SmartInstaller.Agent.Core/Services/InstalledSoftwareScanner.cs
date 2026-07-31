@@ -1,9 +1,8 @@
-using System.IO;
 using System.Globalization;
 using Microsoft.Win32;
-using SmartInstaller.Agent.Models;
+using SmartInstaller.Agent.Core.Models;
 
-namespace SmartInstaller.Agent.Services;
+namespace SmartInstaller.Agent.Core.Services;
 
 public sealed class InstalledSoftwareScanner(
     IApplicationNameNormalizer nameNormalizer)
