@@ -18,9 +18,9 @@ public sealed class HttpDownloaderTests
                     HttpStatusCode.OK,
                     "download-content"));
 
-            var downloader = new HttpDownloader(client);
+            var downloader = new HttpDownloadAttemptExecutor(client);
 
-            var result = await downloader.DownloadAsync(
+            var result = await downloader.ExecuteAsync(
                 new HttpDownloadRequest(
                     new Uri("https://example.test/setup.exe"),
                     path,

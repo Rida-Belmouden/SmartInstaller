@@ -7,7 +7,7 @@ using SmartInstaller.Agent.Core.Download.Http;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Services;
 using SmartInstaller.Agent.Core.Download.Verification;
-
+using SmartInstaller.Agent.Core.Download.Retry;
 
 namespace SmartInstaller.Agent.Core;
 
@@ -22,6 +22,9 @@ public static class DependencyInjection
 
         services.Configure<DownloadOptions>(
             configuration.GetSection(DownloadOptions.SectionName));
+
+        services.Configure<RetryOptions>(
+            configuration.GetSection(RetryOptions.SectionName));
 
         services.AddSingleton<
             IApplicationNameNormalizer,
@@ -55,6 +58,14 @@ public static class DependencyInjection
             ISha256Verifier,
             Sha256Verifier>();
 
+        services.AddSingleton<
+            IRetryPolicy,
+            RetryPolicy>();
+
+        services.AddSingleton<
+            IRetryDelay,
+            SystemRetryDelay>();
+
         services.AddHttpClient<
             IAgentApiClient,
             AgentApiClient>((provider, client) =>
@@ -69,18 +80,13 @@ public static class DependencyInjection
             client.Timeout = options.RequestTimeout;
         });
 
-        services.AddHttpClient<
-            IHttpDownloader,
-            HttpDownloader>((provider, client) =>
+        services.AddHttpClient<IHttpDownloadAttemptExecutor, HttpDownloadAttemptExecutor>((provider, client) =>
         {
-            var options = provider
-                .GetRequiredService<IOptions<DownloadOptions>>()
-                .Value;
-
+            var options = provider.GetRequiredService<IOptions<DownloadOptions>>().Value;
             client.Timeout = options.RequestTimeout;
         });
 
-        services.AddTransient<IDownloadManager, DownloadManager>();
+        services.AddTransient<IHttpDownloader, RetryingHttpDownloader>();
 
         return services;
     }
