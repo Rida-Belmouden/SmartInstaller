@@ -71,6 +71,7 @@ public static class DependencyInjection
         services.AddTransient<IDownloadManager, DownloadManager>();
         services.AddTransient<IUpdateDownloadService, UpdateDownloadService>();
         services.AddTransient<IInstallerService, InstallerService>();
+        services.AddTransient<IUpdateInstallationService, UpdateInstallationService>();
 
         return services;
     }
