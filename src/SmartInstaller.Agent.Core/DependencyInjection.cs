@@ -3,8 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SmartInstaller.Agent.Core.Configuration;
 using SmartInstaller.Agent.Core.Download.Cache;
+using SmartInstaller.Agent.Core.Download.Http;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Services;
+using SmartInstaller.Agent.Core.Download.Verification;
+
 
 namespace SmartInstaller.Agent.Core;
 
@@ -44,6 +47,14 @@ public static class DependencyInjection
             ICachePathProvider,
             CachePathProvider>();
 
+        services.AddSingleton<
+            IFileCacheService,
+            FileCacheService>();
+
+        services.AddSingleton<
+            ISha256Verifier,
+            Sha256Verifier>();
+
         services.AddHttpClient<
             IAgentApiClient,
             AgentApiClient>((provider, client) =>
@@ -59,8 +70,8 @@ public static class DependencyInjection
         });
 
         services.AddHttpClient<
-            IDownloadManager,
-            DownloadManager>((provider, client) =>
+            IHttpDownloader,
+            HttpDownloader>((provider, client) =>
         {
             var options = provider
                 .GetRequiredService<IOptions<DownloadOptions>>()
@@ -68,6 +79,8 @@ public static class DependencyInjection
 
             client.Timeout = options.RequestTimeout;
         });
+
+        services.AddTransient<IDownloadManager, DownloadManager>();
 
         return services;
     }

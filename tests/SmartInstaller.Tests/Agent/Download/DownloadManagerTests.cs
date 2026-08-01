@@ -1,355 +1,339 @@
-using System.Net;
-using Microsoft.Extensions.Options;
-using SmartInstaller.Agent.Core.Configuration;
 using SmartInstaller.Agent.Core.Download.Cache;
+using SmartInstaller.Agent.Core.Download.Http;
 using SmartInstaller.Agent.Core.Download.Models;
 using SmartInstaller.Agent.Core.Download.Services;
+using SmartInstaller.Agent.Core.Download.Verification;
 
 namespace SmartInstaller.Tests.Agent.Download;
 
 public sealed class DownloadManagerTests
 {
     [Fact]
-    public async Task DownloadAsync_WithSuccessfulResponse_CreatesFinalFile()
+    public async Task DownloadAsync_WithSuccessfulDownload_PromotesFile()
     {
-        using var scope = new DownloadTestScope(
-            HttpStatusCode.OK,
+        using var cache = new TestFileCacheService();
+        var downloader = new FakeHttpDownloader(
             "smart-installer");
 
-        var result = await scope.Manager.DownloadAsync(
+        var manager = new DownloadManager(
+            downloader,
+            cache,
+            new Sha256Verifier());
+
+        var result = await manager.DownloadAsync(
             new DownloadRequest(
                 new Uri("https://example.test/setup.exe"),
                 "setup.exe",
                 ExpectedFileSizeBytes: 15));
 
-        Assert.Equal(DownloadStatus.Completed, result.Status);
+        Assert.Equal(
+            DownloadStatus.Completed,
+            result.Status);
+
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.FilePath);
         Assert.True(File.Exists(result.FilePath));
+
         Assert.Equal(
             "smart-installer",
             await File.ReadAllTextAsync(result.FilePath));
+
         Assert.False(File.Exists(
-            scope.PathProvider.GetTemporaryPath("setup.exe")));
+            cache.GetTemporaryPath("setup.exe")));
     }
 
     [Fact]
-    public async Task DownloadAsync_ReportsProgress()
+    public async Task DownloadAsync_WithReusableFile_ReturnsCached()
     {
-        using var scope = new DownloadTestScope(
-            HttpStatusCode.OK,
-            new string('A', 200_000));
-
-        var reports = new List<DownloadProgress>();
-
-        var progress = new InlineProgress<DownloadProgress>(
-            reports.Add);
-
-        var result = await scope.Manager.DownloadAsync(
-            new DownloadRequest(
-                new Uri("https://example.test/setup.exe"),
-                "setup.exe",
-                ExpectedFileSizeBytes: 200_000),
-            progress);
-
-        Assert.Equal(DownloadStatus.Completed, result.Status);
-        Assert.NotEmpty(reports);
-
-        var finalReport = reports[^1];
-
-        Assert.Equal(200_000, finalReport.BytesReceived);
-        Assert.Equal(200_000, finalReport.TotalBytes);
-        Assert.Equal(100d, finalReport.Percentage);
-        Assert.True(finalReport.BytesPerSecond > 0);
-    }
-
-    [Theory]
-    [InlineData(HttpStatusCode.NotFound)]
-    [InlineData(HttpStatusCode.InternalServerError)]
-    public async Task DownloadAsync_WithFailedHttpResponse_ReturnsFailed(
-        HttpStatusCode statusCode)
-    {
-        using var scope = new DownloadTestScope(
-            statusCode,
-            "error");
-
-        var result = await scope.Manager.DownloadAsync(
-            new DownloadRequest(
-                new Uri("https://example.test/setup.exe"),
-                "setup.exe"));
-
-        Assert.Equal(DownloadStatus.Failed, result.Status);
-        Assert.False(result.IsSuccess);
-        Assert.Contains(
-            ((int)statusCode).ToString(),
-            result.ErrorMessage);
-        Assert.False(File.Exists(
-            scope.PathProvider.GetTemporaryPath("setup.exe")));
-    }
-
-    [Fact]
-    public async Task DownloadAsync_WithExistingMatchingFile_ReturnsCached()
-    {
-        using var scope = new DownloadTestScope(
-            HttpStatusCode.OK,
-            "new-content");
-
-        scope.PathProvider.EnsureCacheDirectoryExists();
-
-        var path = scope.PathProvider.GetFinalPath(
-            "setup.exe");
+        using var cache = new TestFileCacheService();
+        cache.EnsureCacheDirectoryExists();
 
         await File.WriteAllTextAsync(
-            path,
+            cache.GetFinalPath("setup.exe"),
             "cached");
 
-        var result = await scope.Manager.DownloadAsync(
+        var downloader = new FakeHttpDownloader(
+            "new-content");
+
+        var manager = new DownloadManager(
+            downloader,
+            cache,
+            new Sha256Verifier());
+
+        var result = await manager.DownloadAsync(
             new DownloadRequest(
                 new Uri("https://example.test/setup.exe"),
                 "setup.exe",
                 ExpectedFileSizeBytes: 6));
 
-        Assert.Equal(DownloadStatus.Cached, result.Status);
-        Assert.Equal("cached", await File.ReadAllTextAsync(path));
-        Assert.Equal(0, scope.Handler.RequestCount);
+        Assert.Equal(
+            DownloadStatus.Cached,
+            result.Status);
+
+        Assert.Equal(0, downloader.CallCount);
     }
 
     [Fact]
-    public async Task DownloadAsync_WithCancellation_RemovesPartialFile()
+    public async Task DownloadAsync_WhenDownloaderFails_DeletesTemporaryFile()
     {
-        using var scope = new DownloadTestScope(
-            new SlowHttpMessageHandler());
+        using var cache = new TestFileCacheService();
 
-        using var cancellation =
-            new CancellationTokenSource(
-                TimeSpan.FromMilliseconds(50));
+        var downloader = FakeHttpDownloader.Failed(
+            "HTTP 500");
 
-        var result = await scope.Manager.DownloadAsync(
+        var manager = new DownloadManager(
+            downloader,
+            cache,
+            new Sha256Verifier());
+
+        var result = await manager.DownloadAsync(
             new DownloadRequest(
                 new Uri("https://example.test/setup.exe"),
-                "setup.exe"),
-            cancellationToken: cancellation.Token);
+                "setup.exe"));
 
-        Assert.Equal(DownloadStatus.Cancelled, result.Status);
+        Assert.Equal(
+            DownloadStatus.Failed,
+            result.Status);
+
+        Assert.Contains(
+            "HTTP 500",
+            result.ErrorMessage);
+
         Assert.False(File.Exists(
-            scope.PathProvider.GetTemporaryPath("setup.exe")));
+            cache.GetTemporaryPath("setup.exe")));
+    }
+
+    [Fact]
+    public async Task DownloadAsync_WhenCancelled_DeletesTemporaryFile()
+    {
+        using var cache = new TestFileCacheService();
+
+        var manager = new DownloadManager(
+            FakeHttpDownloader.Cancelled(),
+            cache,
+            new Sha256Verifier());
+
+        var result = await manager.DownloadAsync(
+            new DownloadRequest(
+                new Uri("https://example.test/setup.exe"),
+                "setup.exe"));
+
+        Assert.Equal(
+            DownloadStatus.Cancelled,
+            result.Status);
+
         Assert.False(File.Exists(
-            scope.PathProvider.GetFinalPath("setup.exe")));
+            cache.GetTemporaryPath("setup.exe")));
     }
 
     [Fact]
     public async Task DownloadAsync_WithSizeMismatch_ReturnsFailed()
     {
-        using var scope = new DownloadTestScope(
-            HttpStatusCode.OK,
-            "small");
+        using var cache = new TestFileCacheService();
 
-        var result = await scope.Manager.DownloadAsync(
+        var manager = new DownloadManager(
+            new FakeHttpDownloader("small"),
+            cache,
+            new Sha256Verifier());
+
+        var result = await manager.DownloadAsync(
             new DownloadRequest(
                 new Uri("https://example.test/setup.exe"),
                 "setup.exe",
                 ExpectedFileSizeBytes: 100));
 
-        Assert.Equal(DownloadStatus.Failed, result.Status);
-        Assert.Contains("size", result.ErrorMessage);
+        Assert.Equal(
+            DownloadStatus.Failed,
+            result.Status);
+
+        Assert.Contains(
+            "size",
+            result.ErrorMessage);
+
         Assert.False(File.Exists(
-            scope.PathProvider.GetFinalPath("setup.exe")));
+            cache.GetFinalPath("setup.exe")));
     }
 
     [Fact]
-    public async Task DownloadAsync_WithUnsupportedScheme_ReturnsFailed()
+    public async Task DownloadAsync_WithUnsupportedScheme_DoesNotCallDownloader()
     {
-        using var scope = new DownloadTestScope(
-            HttpStatusCode.OK,
-            "content");
+        using var cache = new TestFileCacheService();
+        var downloader = new FakeHttpDownloader("content");
 
-        var result = await scope.Manager.DownloadAsync(
+        var manager = new DownloadManager(
+            downloader,
+            cache,
+            new Sha256Verifier());
+
+        var result = await manager.DownloadAsync(
             new DownloadRequest(
                 new Uri("ftp://example.test/setup.exe"),
                 "setup.exe"));
 
-        Assert.Equal(DownloadStatus.Failed, result.Status);
-        Assert.Contains("HTTP", result.ErrorMessage);
-        Assert.Equal(0, scope.Handler.RequestCount);
+        Assert.Equal(
+            DownloadStatus.Failed,
+            result.Status);
+
+        Assert.Equal(0, downloader.CallCount);
     }
 
-    private sealed class DownloadTestScope : IDisposable
+    private sealed class FakeHttpDownloader(
+        string content)
+        : IHttpDownloader
     {
-        public DownloadTestScope(
-            HttpStatusCode statusCode,
-            string content)
-            : this(new TestHttpMessageHandler(
-                statusCode,
-                content))
+        private readonly string? _errorMessage;
+        private readonly bool _cancelled;
+
+        private FakeHttpDownloader(
+            string? errorMessage,
+            bool cancelled)
+            : this(string.Empty)
         {
+            _errorMessage = errorMessage;
+            _cancelled = cancelled;
         }
 
-        public DownloadTestScope(
-            HttpMessageHandler handler)
+        public int CallCount { get; private set; }
+
+        public static FakeHttpDownloader Failed(
+            string errorMessage)
         {
-            CacheDirectory = Path.Combine(
+            return new FakeHttpDownloader(
+                errorMessage,
+                false);
+        }
+
+        public static FakeHttpDownloader Cancelled()
+        {
+            return new FakeHttpDownloader(
+                null,
+                true);
+        }
+
+        public async Task<HttpDownloadResult> DownloadAsync(
+            HttpDownloadRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+
+            if (_cancelled)
+            {
+                return HttpDownloadResult.CancelledResult();
+            }
+
+            if (_errorMessage is not null)
+            {
+                return HttpDownloadResult.Failed(
+                    _errorMessage);
+            }
+
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(
+                    request.DestinationPath)!);
+
+            await File.WriteAllTextAsync(
+                request.DestinationPath,
+                content,
+                cancellationToken);
+
+            return HttpDownloadResult.Completed(
+                content.Length);
+        }
+    }
+
+    private sealed class TestFileCacheService
+        : IFileCacheService, IDisposable
+    {
+        public TestFileCacheService()
+        {
+            RootDirectory = Path.Combine(
                 Path.GetTempPath(),
                 "SmartInstaller.Tests",
                 Guid.NewGuid().ToString("N"));
-
-            Handler = handler as TestHttpMessageHandler
-                ?? new TestHttpMessageHandlerProxy(handler);
-
-            PathProvider = new CachePathProvider(
-                Options.Create(
-                    new DownloadOptions
-                    {
-                        CacheDirectory = CacheDirectory
-                    }));
-
-            Manager = new DownloadManager(
-                new HttpClient(handler),
-                PathProvider);
         }
 
-        public string CacheDirectory { get; }
+        public string RootDirectory { get; }
 
-        public TestHttpMessageHandler Handler { get; }
+        public string GetFinalPath(string fileName)
+        {
+            return Path.Combine(
+                RootDirectory,
+                fileName);
+        }
 
-        public CachePathProvider PathProvider { get; }
+        public string GetTemporaryPath(string fileName)
+        {
+            return GetFinalPath(fileName) +
+                   ".download";
+        }
 
-        public DownloadManager Manager { get; }
+        public bool IsReusable(
+            string fileName,
+            long? expectedFileSizeBytes)
+        {
+            var path = GetFinalPath(fileName);
+
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            return !expectedFileSizeBytes.HasValue ||
+                   new FileInfo(path).Length ==
+                   expectedFileSizeBytes.Value;
+        }
+
+        public void EnsureCacheDirectoryExists()
+        {
+            Directory.CreateDirectory(
+                RootDirectory);
+        }
+
+        public void DeleteTemporaryFile(string fileName)
+        {
+            DeleteIfExists(
+                GetTemporaryPath(fileName));
+        }
+
+        public void DeleteFinalFile(string fileName)
+        {
+            DeleteIfExists(
+                GetFinalPath(fileName));
+        }
+
+        public void PromoteTemporaryFile(
+            string fileName,
+            bool overwrite)
+        {
+            File.Move(
+                GetTemporaryPath(fileName),
+                GetFinalPath(fileName),
+                overwrite);
+        }
+
+        public long GetTemporaryFileSize(string fileName)
+        {
+            return new FileInfo(
+                GetTemporaryPath(fileName)).Length;
+        }
 
         public void Dispose()
         {
-            if (Directory.Exists(CacheDirectory))
+            if (Directory.Exists(RootDirectory))
             {
                 Directory.Delete(
-                    CacheDirectory,
+                    RootDirectory,
                     recursive: true);
             }
         }
-    }
 
-    private class TestHttpMessageHandler(
-        HttpStatusCode statusCode,
-        string content)
-        : HttpMessageHandler
-    {
-        public int RequestCount { get; protected set; }
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
+        private static void DeleteIfExists(
+            string filePath)
         {
-            RequestCount++;
-
-            var response = new HttpResponseMessage(statusCode)
+            if (File.Exists(filePath))
             {
-                Content = new StringContent(content)
-            };
-
-            return Task.FromResult(response);
-        }
-    }
-
-    private sealed class TestHttpMessageHandlerProxy(
-        HttpMessageHandler innerHandler)
-        : TestHttpMessageHandler(
-            HttpStatusCode.OK,
-            string.Empty)
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            RequestCount++;
-
-            return new HttpMessageInvoker(
-                innerHandler)
-                .SendAsync(
-                    request,
-                    cancellationToken);
-        }
-    }
-
-    private sealed class SlowHttpMessageHandler
-        : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken)
-        {
-            var response = new HttpResponseMessage(
-                HttpStatusCode.OK)
-            {
-                Content = new StreamContent(
-                    new SlowStream())
-            };
-
-            return Task.FromResult(response);
-        }
-    }
-
-    private sealed class SlowStream : Stream
-    {
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(
-            byte[] buffer,
-            int offset,
-            int count)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override async ValueTask<int> ReadAsync(
-            Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            await Task.Delay(
-                TimeSpan.FromSeconds(10),
-                cancellationToken);
-
-            return 0;
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(
-            long offset,
-            SeekOrigin origin)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void SetLength(long value)
-        {
-            throw new NotSupportedException();
-        }
-
-        public override void Write(
-            byte[] buffer,
-            int offset,
-            int count)
-        {
-            throw new NotSupportedException();
-        }
-    }
-
-    private sealed class InlineProgress<T>(
-        Action<T> callback)
-        : IProgress<T>
-    {
-        public void Report(T value)
-        {
-            callback(value);
+                File.Delete(filePath);
+            }
         }
     }
 }
