@@ -42,12 +42,43 @@ public sealed class AgentApiClient(HttpClient httpClient) : IAgentApiClient
             cancellationToken);
     }
 
+    public async Task<InstallerManifest> GetInstallerManifestAsync(
+        Guid installerProfileId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await httpClient.GetAsync(
+            $"api/agent/installer-manifest/{installerProfileId}",
+            cancellationToken);
+
+        return await ReadDataAsync<InstallerManifest>(
+            response,
+            cancellationToken);
+    }
+
     private static async Task<T> ReadDataAsync<T>(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
-        var result = await response.Content.ReadFromJsonAsync<ApiResponse<T>>(
+        var body = await response.Content.ReadAsStringAsync(
             cancellationToken);
+
+        ApiResponse<T>? result;
+
+        try
+        {
+            result = System.Text.Json.JsonSerializer.Deserialize<ApiResponse<T>>(
+                body,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+        }
+        catch (System.Text.Json.JsonException exception)
+        {
+            throw new InvalidOperationException(
+                $"SmartInstaller API returned an invalid JSON response.{Environment.NewLine}{body}",
+                exception);
+        }
 
         if (!response.IsSuccessStatusCode || result is null || !result.Success)
         {
@@ -57,6 +88,7 @@ public sealed class AgentApiClient(HttpClient httpClient) : IAgentApiClient
         }
 
         return result.Data ??
-               throw new InvalidOperationException("The SmartInstaller API response contained no data.");
+               throw new InvalidOperationException(
+                   "The SmartInstaller API response contained no data.");
     }
 }

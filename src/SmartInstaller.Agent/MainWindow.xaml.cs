@@ -1,9 +1,14 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.IO;
+using SmartInstaller.Agent.Core.Download.Models;
+using SmartInstaller.Agent.Core.Installation.Models;
+using SmartInstaller.Agent.Core.Installation.Verification;
 using SmartInstaller.Agent.Core.Models;
 using SmartInstaller.Agent.Core.Services;
 
@@ -13,45 +18,62 @@ public partial class MainWindow : Window
 {
     private readonly IInstalledSoftwareScanner _scanner;
     private readonly IUpdateSynchronizationService _synchronizationService;
+    private readonly IUpdateDownloadService _updateDownloadService;
+    private readonly IUpdateInstallationService _updateInstallationService;
     private readonly ObservableCollection<InstalledApplication> _applications = [];
     private readonly ObservableCollection<UpdateRow> _updates = [];
-    private readonly ICollectionView _applicationsView;
+    private readonly ICollectionView _applicationsView;    
+
     private CancellationTokenSource? _operationCancellationTokenSource;
+    private bool _isBusy;
 
     public MainWindow(
         IInstalledSoftwareScanner scanner,
         IUpdateSynchronizationService synchronizationService,
+        IUpdateDownloadService updateDownloadService,
+        IUpdateInstallationService updateInstallationService,
         ISystemArchitectureDetector architectureDetector)
     {
         InitializeComponent();
+
         _scanner = scanner;
         _synchronizationService = synchronizationService;
+        _updateDownloadService = updateDownloadService;
+        _updateInstallationService = updateInstallationService;
+
         ArchitectureText.Text = architectureDetector.Detect();
         ApplicationsGrid.ItemsSource = _applications;
         UpdatesGrid.ItemsSource = _updates;
-        _applicationsView = CollectionViewSource.GetDefaultView(_applications);
+
+        _applicationsView =
+            CollectionViewSource.GetDefaultView(_applications);
+
         _applicationsView.Filter = FilterApplication;
     }
 
-    private async void ScanButton_Click(object sender, RoutedEventArgs e)
+    private async void ScanButton_Click(
+        object sender,
+        RoutedEventArgs e)
     {
         BeginOperation("Scanning the Windows registry...");
 
         try
         {
             var applications = await _scanner.ScanAsync(
-                _operationCancellationTokenSource!.Token);
+                CurrentToken);
 
             _applications.Clear();
+
             foreach (var application in applications)
             {
                 _applications.Add(application);
             }
 
-            _updates.Clear();
-            UpdatesTab.Header = "Updates (0)";
+            ClearUpdates();
             RefreshView();
-            StatusText.Text = $"Scan completed. Found {applications.Count} applications.";
+
+            StatusText.Text =
+                $"Scan completed. Found {applications.Count} applications.";
         }
         catch (OperationCanceledException)
         {
@@ -67,31 +89,39 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
+    private async void CheckUpdatesButton_Click(
+        object sender,
+        RoutedEventArgs e)
     {
-        BeginOperation("Connecting to the SmartInstaller API...");
+        BeginOperation(
+            "Connecting to the SmartInstaller API...");
 
         try
         {
-            var result = await _synchronizationService.CheckUpdatesAsync(
-                _applications.ToArray(),
-                _operationCancellationTokenSource!.Token);
+            var result =
+                await _synchronizationService.CheckUpdatesAsync(
+                    _applications.ToArray(),
+                    CurrentToken);
 
-            _updates.Clear();
+            ClearUpdates();
+
             foreach (var item in result.Items)
             {
-                _updates.Add(new UpdateRow(
-                    item.ApplicationName,
-                    item.InstalledVersion,
-                    item.LatestVersion,
-                    item.UpdateAvailable ? "Update available" : "Up to date"));
+                var row = new UpdateRow(item);
+
+                row.PropertyChanged +=
+                    UpdateRow_PropertyChanged;
+
+                _updates.Add(row);
             }
 
-            UpdatesTab.Header = $"Updates ({result.UpdateCount})";
-            StatusText.Text = result.MatchedApplicationCount == 0
-                ? "No installed applications matched the current SmartInstaller catalog."
-                : $"Matched {result.MatchedApplicationCount} applications. " +
-                  $"Found {result.UpdateCount} updates.";
+            UpdatesTab.Header =
+                $"Updates ({result.UpdateCount})";
+
+            StatusText.Text =
+                result.MatchedApplicationCount == 0
+                    ? "No installed applications matched the current SmartInstaller catalog."
+                    : $"Matched {result.MatchedApplicationCount} applications. Found {result.UpdateCount} updates.";
         }
         catch (OperationCanceledException)
         {
@@ -100,12 +130,14 @@ public partial class MainWindow : Window
         catch (HttpRequestException exception)
         {
             ShowError(
-                "Could not connect to the SmartInstaller API. Make sure the API is running and the URL in appsettings.json is correct.",
+                "Could not connect to the SmartInstaller API. Make sure the API is running and appsettings.json is correct.",
                 exception);
         }
         catch (Exception exception)
         {
-            ShowError("The update check failed.", exception);
+            ShowError(
+                "The update check failed.",
+                exception);
         }
         finally
         {
@@ -113,21 +145,358 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void DownloadSelectedButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var selected = _updates
+            .Where(row =>
+                row.IsSelected &&
+                row.CanDownload)
+            .ToArray();
+
+        if (selected.Length == 0)
+        {
+            StatusText.Text =
+                "Select at least one available update.";
+            return;
+        }
+
+        BeginOperation(
+            $"Downloading {selected.Length} update(s)...");
+
+        try
+        {
+            var completed = 0;
+
+            foreach (var row in selected)
+            {
+                CurrentToken.ThrowIfCancellationRequested();
+
+                row.Status = "Preparing download";
+                row.Percentage = 0;
+
+                var progress =
+                    new Progress<DownloadProgress>(value =>
+                    {
+                        row.Percentage =
+                            value.Percentage ?? 0;
+
+                        row.Status = "Downloading";
+
+                        StatusText.Text =
+                            $"Downloading {row.ApplicationName}: {row.ProgressText}";
+                    });
+
+                var result =
+                    await _updateDownloadService.DownloadAsync(
+                        row.Update,
+                        progress,
+                        CurrentToken);
+
+                row.Manifest = result.Manifest;
+                row.FilePath =
+                    result.DownloadResult.FilePath;
+
+                row.Status =
+                    result.DownloadResult.Status switch
+                    {
+                        DownloadStatus.Completed =>
+                            "Downloaded and verified",
+
+                        DownloadStatus.Cached =>
+                            "Ready from cache",
+
+                        DownloadStatus.Cancelled =>
+                            "Canceled",
+
+                        DownloadStatus.VerificationFailed =>
+                            "Verification failed",
+
+                        _ =>
+                            result.DownloadResult.ErrorMessage ??
+                            "Download failed"
+                    };
+
+                if (result.DownloadResult.IsSuccess)
+                {
+                    row.Percentage = 100;
+                    row.IsSelected = true;
+                    completed++;
+                }
+                else
+                {
+                    row.IsSelected = false;
+                }
+
+                row.NotifyAvailabilityChanged();
+            }
+
+            StatusText.Text =
+                $"Download operation completed. {completed}/{selected.Length} installer(s) ready.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text =
+                "Download operation canceled.";
+        }
+        catch (HttpRequestException exception)
+        {
+            ShowError(
+                "Could not retrieve the installer manifest.",
+                exception);
+        }
+        catch (Exception exception)
+        {
+            ShowError(
+                "The download operation failed.",
+                exception);
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
+    private async void InstallSelectedButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var selected = _updates
+            .Where(row =>
+                row.IsSelected &&
+                row.CanInstall)
+            .ToArray();
+
+        if (selected.Length == 0)
+        {
+            StatusText.Text =
+                "Select at least one downloaded installer.";
+            return;
+        }
+
+        var confirmation = MessageBox.Show(
+            this,
+            $"Install {selected.Length} selected update(s) silently?",
+            "SmartInstaller Agent",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        BeginOperation(
+            $"Installing {selected.Length} update(s)...");
+
+        try
+        {
+            var succeeded = 0;
+
+            foreach (var row in selected)
+            {
+                CurrentToken.ThrowIfCancellationRequested();
+
+                row.Status = "Launching installer";
+                StatusText.Text =
+                    $"Installing {row.ApplicationName}...";
+
+                var result =
+                    await _updateInstallationService.InstallAsync(
+                        row.Update,
+                        row.Manifest!,
+                        row.FilePath!,
+                        CurrentToken);
+
+                row.Status =
+                    GetInstallationStatus(result);
+
+                if (result.VerificationResult.IsVerified)
+                {
+                    row.InstalledVersion =
+                        result.VerificationResult.DetectedVersion
+                        ?? row.LatestVersion;
+
+                    row.IsInstalled = true;
+                    row.IsSelected = false;
+                    row.Percentage = 100;
+                    succeeded++;
+                }
+                else if (result.InstallResult.Status ==
+                         InstallStatus.RestartRequired)
+                {
+                    row.IsSelected = false;
+                    succeeded++;
+                }
+
+                row.NotifyAvailabilityChanged();
+            }
+
+            await RefreshInstalledApplicationsAsync(
+                CurrentToken);
+
+            var completedRows = selected
+                .Where(row => row.IsInstalled)
+                .ToArray();
+
+            foreach (var row in completedRows)
+            {
+                row.PropertyChanged -=
+                    UpdateRow_PropertyChanged;
+
+                _updates.Remove(row);
+            }
+
+            UpdatesTab.Header =
+                $"Updates ({_updates.Count(row => !row.IsInstalled)})";
+
+            StatusText.Text =
+                $"Installation completed. {succeeded}/{selected.Length} update(s) installed and verified.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text =
+                "Installation operation canceled.";
+        }
+        catch (Exception exception)
+        {
+            ShowError(
+                "The installation operation failed.",
+                exception);
+        }
+        finally
+        {
+            EndOperation();
+        }
+    }
+
+    private static string GetInstallationStatus(
+        UpdateInstallationResult result)
+    {
+        if (!result.InstallResult.IsSuccess)
+        {
+            return result.InstallResult.Status switch
+            {
+                InstallStatus.Cancelled =>
+                    "Installation canceled",
+
+                InstallStatus.TimedOut =>
+                    "Installation timed out",
+
+                InstallStatus.FileNotFound =>
+                    "Installer file not found",
+
+                InstallStatus.UnsupportedInstaller =>
+                    "Unsupported installer",
+
+                _ =>
+                    result.InstallResult.ErrorMessage ??
+                    "Installation failed"
+            };
+        }
+
+        return result.VerificationResult.Status switch
+        {
+            InstallationVerificationStatus.Verified =>
+                "Installed and verified",
+
+            InstallationVerificationStatus.PendingRestart =>
+                "Installed - restart required",
+
+            InstallationVerificationStatus.ApplicationNotFound =>
+                "Installed, but application was not detected",
+
+            InstallationVerificationStatus.VersionUnavailable =>
+                "Installed, but version could not be verified",
+
+            InstallationVerificationStatus.VersionMismatch =>
+                result.VerificationResult.Message ??
+                "Installed, but version mismatch",
+
+            _ =>
+                "Installed, verification not required"
+        };
+    }
+
+    private async Task RefreshInstalledApplicationsAsync(
+        CancellationToken cancellationToken)
+    {
+        var applications =
+            await _scanner.ScanAsync(cancellationToken);
+
+        _applications.Clear();
+
+        foreach (var application in applications)
+        {
+            _applications.Add(application);
+        }
+
+        RefreshView();
+    }
+
+    private CancellationToken CurrentToken =>
+        _operationCancellationTokenSource?.Token ??
+        CancellationToken.None;
+
+    private void ClearUpdates()
+    {
+        foreach (var row in _updates)
+        {
+            row.PropertyChanged -=
+                UpdateRow_PropertyChanged;
+        }
+
+        _updates.Clear();
+        UpdatesTab.Header = "Updates (0)";
+    }
+
+    private void UpdateRow_PropertyChanged(
+        object? sender,
+        PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is
+            nameof(UpdateRow.IsSelected) or
+            nameof(UpdateRow.Status) or
+            nameof(UpdateRow.FilePath) or
+            nameof(UpdateRow.Manifest) or
+            nameof(UpdateRow.IsInstalled))
+        {
+            RefreshActionButtons();
+        }
+    }
+
     private void BeginOperation(string status)
     {
         _operationCancellationTokenSource?.Dispose();
-        _operationCancellationTokenSource = new CancellationTokenSource();
+
+        _operationCancellationTokenSource =
+            new CancellationTokenSource();
+
+        _isBusy = true;
         SetBusyState(true);
         StatusText.Text = status;
     }
 
-    private void EndOperation() => SetBusyState(false);
+    private void EndOperation()
+    {
+        _isBusy = false;
+        SetBusyState(false);
+    }
 
-    private void CancelButton_Click(object sender, RoutedEventArgs e) =>
+    private void CancelButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
         _operationCancellationTokenSource?.Cancel();
+    }
 
-    private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e) =>
+    private void SearchTextBox_TextChanged(
+        object sender,
+        TextChangedEventArgs e)
+    {
         RefreshView();
+    }
 
     private bool FilterApplication(object item)
     {
@@ -137,32 +506,67 @@ public partial class MainWindow : Window
         }
 
         var search = SearchTextBox.Text.Trim();
+
         return string.IsNullOrWhiteSpace(search) ||
                Contains(application.Name, search) ||
                Contains(application.Version, search) ||
                Contains(application.Publisher, search);
     }
 
-    private static bool Contains(string? value, string search) =>
-        value?.Contains(search, StringComparison.CurrentCultureIgnoreCase) == true;
+    private static bool Contains(
+        string? value,
+        string search)
+    {
+        return value?.Contains(
+            search,
+            StringComparison.CurrentCultureIgnoreCase) ==
+            true;
+    }
 
     private void RefreshView()
     {
         _applicationsView.Refresh();
-        CountText.Text = $"{_applicationsView.Cast<object>().Count()} applications";
+
+        CountText.Text =
+            $"{_applicationsView.Cast<object>().Count()} applications";
     }
 
     private void SetBusyState(bool isBusy)
     {
         ScanButton.IsEnabled = !isBusy;
-        CheckUpdatesButton.IsEnabled = !isBusy && _applications.Count > 0;
+
+        CheckUpdatesButton.IsEnabled =
+            !isBusy &&
+            _applications.Count > 0;
+
         CancelButton.IsEnabled = isBusy;
         SearchTextBox.IsEnabled = !isBusy;
+        UpdatesGrid.IsEnabled = !isBusy;
+
+        RefreshActionButtons();
     }
 
-    private void ShowError(string message, Exception exception)
+    private void RefreshActionButtons()
+    {
+        DownloadSelectedButton.IsEnabled =
+            !_isBusy &&
+            _updates.Any(row =>
+                row.IsSelected &&
+                row.CanDownload);
+
+        InstallSelectedButton.IsEnabled =
+                !_isBusy &&
+                _updates.Any(row =>
+                    row.IsSelected &&
+                    row.CanInstall);
+    }
+
+    private void ShowError(
+        string message,
+        Exception exception)
     {
         StatusText.Text = message;
+
         MessageBox.Show(
             this,
             $"{message}\n\n{exception.Message}",
@@ -171,19 +575,187 @@ public partial class MainWindow : Window
             MessageBoxImage.Error);
     }
 
-    private void ApplicationsGrid_Sorting(object sender, DataGridSortingEventArgs e) =>
-        StatusText.Text = $"Sorted by {e.Column.Header}.";
+    private void ApplicationsGrid_Sorting(
+        object sender,
+        DataGridSortingEventArgs e)
+    {
+        StatusText.Text =
+            $"Sorted by {e.Column.Header}.";
+    }
 
     protected override void OnClosed(EventArgs e)
     {
         _operationCancellationTokenSource?.Cancel();
         _operationCancellationTokenSource?.Dispose();
+
         base.OnClosed(e);
     }
 
-    private sealed record UpdateRow(
-        string ApplicationName,
-        string InstalledVersion,
-        string LatestVersion,
-        string Status);
+    private sealed class UpdateRow
+        : INotifyPropertyChanged
+    {
+        private bool _isSelected;
+        private string _status;
+        private double _percentage;
+        private string? _filePath;
+        private InstallerManifest? _manifest;
+        private bool _isInstalled;
+
+        public UpdateRow(UpdateCheckItem update)
+        {
+            Update = update;
+
+            _installedVersion = update.InstalledVersion;
+
+            _isSelected =
+                update.UpdateAvailable &&
+                update.InstallerProfileId.HasValue;
+
+            _status = update.UpdateAvailable
+                ? update.InstallerProfileId.HasValue
+                    ? "Update available"
+                    : "No compatible installer"
+                : "Up to date";
+        }
+
+        public UpdateCheckItem Update { get; }
+
+        public string ApplicationName =>
+            Update.ApplicationName;
+
+        private string _installedVersion;
+
+        public string InstalledVersion
+        {
+            get => _installedVersion;
+            set => SetField(
+                ref _installedVersion,
+                value);
+        }
+
+        public string LatestVersion =>
+            Update.LatestVersion;
+
+        public bool CanDownload =>
+            !_isInstalled &&
+            Update.UpdateAvailable &&
+            Update.InstallerProfileId.HasValue &&
+            string.IsNullOrWhiteSpace(FilePath);
+
+        public bool CanInstall =>
+            !_isInstalled &&
+            Manifest is not null &&
+            !string.IsNullOrWhiteSpace(FilePath) &&
+            File.Exists(FilePath);
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (!CanDownload && !CanInstall)
+                {
+                    value = false;
+                }
+
+                SetField(ref _isSelected, value);
+            }
+        }
+
+        public string Status
+        {
+            get => _status;
+            set => SetField(ref _status, value);
+        }
+
+        public double Percentage
+        {
+            get => _percentage;
+            set
+            {
+                if (SetField(ref _percentage, value))
+                {
+                    OnPropertyChanged(
+                        nameof(ProgressText));
+                }
+            }
+        }
+
+        public string ProgressText =>
+            $"{Percentage:0}%";
+
+        public string? FilePath
+        {
+            get => _filePath;
+            set
+            {
+                if (SetField(ref _filePath, value))
+                {
+                    NotifyAvailabilityChanged();
+                }
+            }
+        }
+
+        public InstallerManifest? Manifest
+        {
+            get => _manifest;
+            set
+            {
+                if (SetField(ref _manifest, value))
+                {
+                    NotifyAvailabilityChanged();
+                }
+            }
+        }
+
+        public bool IsInstalled
+        {
+            get => _isInstalled;
+            set
+            {
+                if (SetField(ref _isInstalled, value))
+                {
+                    NotifyAvailabilityChanged();
+                }
+            }
+        }
+
+        public void NotifyAvailabilityChanged()
+        {
+            OnPropertyChanged(nameof(CanDownload));
+            OnPropertyChanged(nameof(CanInstall));
+            OnPropertyChanged(nameof(IsSelected));
+        }
+
+        public event PropertyChangedEventHandler?
+            PropertyChanged;
+
+        private bool SetField<T>(
+            ref T field,
+            T value,
+            [CallerMemberName]
+            string? propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(
+                    field,
+                    value))
+            {
+                return false;
+            }
+
+            field = value;
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        private void OnPropertyChanged(
+            [CallerMemberName]
+            string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(
+                    propertyName));
+        }
+    }
 }
