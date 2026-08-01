@@ -52,9 +52,9 @@ public sealed class HttpDownloaderTests
                     HttpStatusCode.NotFound,
                     string.Empty));
 
-            var downloader = new HttpDownloader(client);
+            var downloader = new HttpDownloadAttemptExecutor(client);
 
-            var result = await downloader.DownloadAsync(
+            var result = await downloader.ExecuteAsync(
                 new HttpDownloadRequest(
                     new Uri("https://example.test/setup.exe"),
                     path,
@@ -86,9 +86,9 @@ public sealed class HttpDownloaderTests
                     HttpStatusCode.OK,
                     content));
 
-            var downloader = new HttpDownloader(client);
+            var downloader = new HttpDownloadAttemptExecutor(client);
 
-            var result = await downloader.DownloadAsync(
+            var result = await downloader.ExecuteAsync(
                 new HttpDownloadRequest(
                     new Uri("https://example.test/setup.exe"),
                     path,

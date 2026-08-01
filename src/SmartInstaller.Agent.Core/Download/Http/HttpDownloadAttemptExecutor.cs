@@ -17,6 +17,7 @@ public sealed class HttpDownloadAttemptExecutor(HttpClient httpClient) : IHttpDo
                 return HttpDownloadResult.Failed(CreateHttpErrorMessage(response.StatusCode), response.StatusCode, GetRetryAfter(response));
 
             var responseLength = response.Content.Headers.ContentLength;
+
             if (request.ExpectedFileSizeBytes.HasValue && responseLength.HasValue && request.ExpectedFileSizeBytes.Value != responseLength.Value)
                 return HttpDownloadResult.Failed("The server file size does not match the expected size.");
 

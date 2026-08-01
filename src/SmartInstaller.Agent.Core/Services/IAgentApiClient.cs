@@ -12,4 +12,8 @@ public interface IAgentApiClient
         string architecture,
         IReadOnlyList<MatchedInstalledApplication> applications,
         CancellationToken cancellationToken = default);
+
+    Task<InstallerManifest> GetInstallerManifestAsync(
+        Guid installerProfileId,
+        CancellationToken cancellationToken = default);
 }
