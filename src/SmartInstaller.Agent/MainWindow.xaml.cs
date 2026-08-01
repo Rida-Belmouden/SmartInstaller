@@ -8,6 +8,7 @@ using System.Windows.Data;
 using System.IO;
 using SmartInstaller.Agent.Core.Download.Models;
 using SmartInstaller.Agent.Core.Installation.Models;
+using SmartInstaller.Agent.Core.Installation.Verification;
 using SmartInstaller.Agent.Core.Models;
 using SmartInstaller.Agent.Core.Services;
 
@@ -309,34 +310,22 @@ public partial class MainWindow : Window
                         CurrentToken);
 
                 row.Status =
-                    result.InstallResult.Status switch
-                    {
-                        InstallStatus.Succeeded =>
-                            "Installed successfully",
+                    GetInstallationStatus(result);
 
-                        InstallStatus.RestartRequired =>
-                            "Installed - restart required",
-
-                        InstallStatus.Cancelled =>
-                            "Installation canceled",
-
-                        InstallStatus.TimedOut =>
-                            "Installation timed out",
-
-                        InstallStatus.FileNotFound =>
-                            "Installer file not found",
-
-                        InstallStatus.UnsupportedInstaller =>
-                            "Unsupported installer",
-
-                        _ =>
-                            result.InstallResult.ErrorMessage ??
-                            "Installation failed"
-                    };
-
-                if (result.InstallResult.IsSuccess)
+                if (result.VerificationResult.IsVerified)
                 {
+                    row.InstalledVersion =
+                        result.VerificationResult.DetectedVersion
+                        ?? row.LatestVersion;
+
                     row.IsInstalled = true;
+                    row.IsSelected = false;
+                    row.Percentage = 100;
+                    succeeded++;
+                }
+                else if (result.InstallResult.Status ==
+                         InstallStatus.RestartRequired)
+                {
                     row.IsSelected = false;
                     succeeded++;
                 }
@@ -344,8 +333,26 @@ public partial class MainWindow : Window
                 row.NotifyAvailabilityChanged();
             }
 
+            await RefreshInstalledApplicationsAsync(
+                CurrentToken);
+
+            var completedRows = selected
+                .Where(row => row.IsInstalled)
+                .ToArray();
+
+            foreach (var row in completedRows)
+            {
+                row.PropertyChanged -=
+                    UpdateRow_PropertyChanged;
+
+                _updates.Remove(row);
+            }
+
+            UpdatesTab.Header =
+                $"Updates ({_updates.Count(row => !row.IsInstalled)})";
+
             StatusText.Text =
-                $"Installation completed. {succeeded}/{selected.Length} update(s) installed.";
+                $"Installation completed. {succeeded}/{selected.Length} update(s) installed and verified.";
         }
         catch (OperationCanceledException)
         {
@@ -362,6 +369,70 @@ public partial class MainWindow : Window
         {
             EndOperation();
         }
+    }
+
+    private static string GetInstallationStatus(
+        UpdateInstallationResult result)
+    {
+        if (!result.InstallResult.IsSuccess)
+        {
+            return result.InstallResult.Status switch
+            {
+                InstallStatus.Cancelled =>
+                    "Installation canceled",
+
+                InstallStatus.TimedOut =>
+                    "Installation timed out",
+
+                InstallStatus.FileNotFound =>
+                    "Installer file not found",
+
+                InstallStatus.UnsupportedInstaller =>
+                    "Unsupported installer",
+
+                _ =>
+                    result.InstallResult.ErrorMessage ??
+                    "Installation failed"
+            };
+        }
+
+        return result.VerificationResult.Status switch
+        {
+            InstallationVerificationStatus.Verified =>
+                "Installed and verified",
+
+            InstallationVerificationStatus.PendingRestart =>
+                "Installed - restart required",
+
+            InstallationVerificationStatus.ApplicationNotFound =>
+                "Installed, but application was not detected",
+
+            InstallationVerificationStatus.VersionUnavailable =>
+                "Installed, but version could not be verified",
+
+            InstallationVerificationStatus.VersionMismatch =>
+                result.VerificationResult.Message ??
+                "Installed, but version mismatch",
+
+            _ =>
+                "Installed, verification not required"
+        };
+    }
+
+    private async Task RefreshInstalledApplicationsAsync(
+        CancellationToken cancellationToken)
+    {
+        var applications =
+            await _scanner.ScanAsync(cancellationToken);
+
+        _applications.Clear();
+
+        foreach (var application in applications)
+        {
+            _applications.Add(application);
+        }
+
+        RefreshView();
     }
 
     private CancellationToken CurrentToken =>
@@ -534,6 +605,8 @@ public partial class MainWindow : Window
         {
             Update = update;
 
+            _installedVersion = update.InstalledVersion;
+
             _isSelected =
                 update.UpdateAvailable &&
                 update.InstallerProfileId.HasValue;
@@ -550,8 +623,15 @@ public partial class MainWindow : Window
         public string ApplicationName =>
             Update.ApplicationName;
 
-        public string InstalledVersion =>
-            Update.InstalledVersion;
+        private string _installedVersion;
+
+        public string InstalledVersion
+        {
+            get => _installedVersion;
+            set => SetField(
+                ref _installedVersion,
+                value);
+        }
 
         public string LatestVersion =>
             Update.LatestVersion;

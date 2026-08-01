@@ -1,11 +1,13 @@
 using SmartInstaller.Agent.Core.Installation.Models;
 using SmartInstaller.Agent.Core.Installation.Services;
+using SmartInstaller.Agent.Core.Installation.Verification;
 using SmartInstaller.Agent.Core.Models;
 
 namespace SmartInstaller.Agent.Core.Services;
 
 public sealed class UpdateInstallationService(
-    IInstallerService installerService)
+    IInstallerService installerService,
+    IInstallationVerifier installationVerifier)
     : IUpdateInstallationService
 {
     public async Task<UpdateInstallationResult> InstallAsync(
@@ -41,19 +43,52 @@ public sealed class UpdateInstallationService(
                 "Portable packages are not supported by the installer engine yet.");
         }
 
-        var result = await installerService.InstallAsync(
-            new InstallRequest(
-                installerPath,
-                installerKind.Value,
-                manifest.SilentInstallArguments,
-                manifest.RequiresAdministrator),
-            cancellationToken);
+        var installResult =
+            await installerService.InstallAsync(
+                new InstallRequest(
+                    installerPath,
+                    installerKind.Value,
+                    manifest.SilentInstallArguments,
+                    manifest.RequiresAdministrator),
+                cancellationToken);
+
+        var verificationResult =
+            await CreateVerificationResultAsync(
+                update,
+                installResult,
+                cancellationToken);
 
         return new UpdateInstallationResult(
             update,
             manifest,
             installerPath,
-            result);
+            installResult,
+            verificationResult);
+    }
+
+    private async Task<InstallationVerificationResult>
+        CreateVerificationResultAsync(
+            UpdateCheckItem update,
+            InstallResult installResult,
+            CancellationToken cancellationToken)
+    {
+        if (installResult.Status ==
+            InstallStatus.RestartRequired)
+        {
+            return InstallationVerificationResult.PendingRestart(
+                update.LatestVersion);
+        }
+
+        if (!installResult.IsSuccess)
+        {
+            return InstallationVerificationResult.NotRequired(
+                update.LatestVersion);
+        }
+
+        return await installationVerifier.VerifyAsync(
+            update.ApplicationName,
+            update.LatestVersion,
+            cancellationToken);
     }
 
     private static InstallerKind? ParseInstallerKind(
@@ -82,6 +117,8 @@ public sealed class UpdateInstallationService(
                 status,
                 null,
                 TimeSpan.Zero,
-                message));
+                message),
+            InstallationVerificationResult.NotRequired(
+                update.LatestVersion));
     }
 }
