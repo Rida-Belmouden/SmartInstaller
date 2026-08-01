@@ -8,6 +8,9 @@ using SmartInstaller.Agent.Core.Download.Retry;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Download.Verification;
 using SmartInstaller.Agent.Core.Services;
+using SmartInstaller.Agent.Core.Installation.Commands;
+using SmartInstaller.Agent.Core.Installation.Processes;
+using SmartInstaller.Agent.Core.Installation.Services;
 
 namespace SmartInstaller.Agent.Core;
 
@@ -26,17 +29,22 @@ public static class DependencyInjection
         services.Configure<RetryOptions>(
             configuration.GetSection(RetryOptions.SectionName));
 
+        services.Configure<InstallationOptions>(
+            configuration.GetSection(InstallationOptions.SectionName));
+
         services.AddSingleton<IApplicationNameNormalizer, ApplicationNameNormalizer>();
         services.AddSingleton<IInstalledSoftwareScanner, InstalledSoftwareScanner>();
         services.AddSingleton<ISystemArchitectureDetector, SystemArchitectureDetector>();
         services.AddSingleton<IApplicationMatcher, ApplicationMatcher>();
         services.AddSingleton<IUpdateSynchronizationService, UpdateSynchronizationService>();
-
         services.AddSingleton<ICachePathProvider, CachePathProvider>();
         services.AddSingleton<IFileCacheService, FileCacheService>();
         services.AddSingleton<ISha256Verifier, Sha256Verifier>();
         services.AddSingleton<IRetryPolicy, RetryPolicy>();
         services.AddSingleton<IRetryDelay, SystemRetryDelay>();
+        services.AddSingleton<IInstallCommandBuilder, InstallCommandBuilder>();
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
+
 
         services.AddHttpClient<IAgentApiClient, AgentApiClient>((provider, client) =>
         {
@@ -62,6 +70,7 @@ public static class DependencyInjection
         services.AddTransient<IHttpDownloader, RetryingHttpDownloader>();
         services.AddTransient<IDownloadManager, DownloadManager>();
         services.AddTransient<IUpdateDownloadService, UpdateDownloadService>();
+        services.AddTransient<IInstallerService, InstallerService>();
 
         return services;
     }
