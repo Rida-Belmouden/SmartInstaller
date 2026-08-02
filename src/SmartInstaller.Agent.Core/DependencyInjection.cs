@@ -8,10 +8,12 @@ using SmartInstaller.Agent.Core.Download.Http;
 using SmartInstaller.Agent.Core.Download.Retry;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Download.Verification;
+using SmartInstaller.Agent.Core.Download.Resume;
 using SmartInstaller.Agent.Core.Installation.Commands;
 using SmartInstaller.Agent.Core.Installation.Processes;
 using SmartInstaller.Agent.Core.Installation.Services;
 using SmartInstaller.Agent.Core.Installation.Verification;
+
 
 
 namespace SmartInstaller.Agent.Core;
@@ -40,6 +42,8 @@ public static class DependencyInjection
         services.AddSingleton<IInstallCommandBuilder, InstallCommandBuilder>();
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IInstallationVerificationDelay, InstallationVerificationDelay>();
+        services.AddSingleton<IResumePolicy, ResumePolicy>();
+        services.AddSingleton<IInstallerFileNameResolver, InstallerFileNameResolver>();
 
         services.AddTransient<IHttpDownloader, RetryingHttpDownloader>();
         services.AddTransient<IDownloadManager, DownloadManager>();
@@ -47,6 +51,7 @@ public static class DependencyInjection
         services.AddTransient<IInstallerService, InstallerService>();
         services.AddTransient<IUpdateInstallationService, UpdateInstallationService>();
         services.AddTransient<IInstallationVerifier, InstallationVerifier>();
+        services.AddTransient<IUpdateDownloadStateService, UpdateDownloadStateService>();
 
         services.AddHttpClient<IAgentApiClient, AgentApiClient>((provider, client) =>
         {

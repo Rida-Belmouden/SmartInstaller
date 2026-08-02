@@ -15,7 +15,7 @@ public sealed class UpdateDownloadServiceTests
         var manager = new FakeDownloadManager(
             DownloadResult.Completed("C:\\cache\\setup.exe", TimeSpan.Zero));
 
-        var service = new UpdateDownloadService(api, manager);
+        var service = new UpdateDownloadService(api, manager, new InstallerFileNameResolver());
 
         var result = await service.DownloadAsync(update);
 
@@ -32,7 +32,8 @@ public sealed class UpdateDownloadServiceTests
         var update = CreateUpdate() with { InstallerProfileId = null };
         var service = new UpdateDownloadService(
             new FakeAgentApiClient(CreateManifest()),
-            new FakeDownloadManager(DownloadResult.Failed("unused")));
+            new FakeDownloadManager(DownloadResult.Failed("unused")),
+            new InstallerFileNameResolver());
 
         var result = await service.DownloadAsync(update);
 
@@ -46,7 +47,8 @@ public sealed class UpdateDownloadServiceTests
         var update = CreateUpdate() with { UpdateAvailable = false };
         var service = new UpdateDownloadService(
             new FakeAgentApiClient(CreateManifest()),
-            new FakeDownloadManager(DownloadResult.Failed("unused")));
+            new FakeDownloadManager(DownloadResult.Failed("unused")),
+            new InstallerFileNameResolver());
 
         var result = await service.DownloadAsync(update);
 
@@ -71,7 +73,8 @@ public sealed class UpdateDownloadServiceTests
 
         var service = new UpdateDownloadService(
             new FakeAgentApiClient(manifest),
-            manager);
+            manager,
+            new InstallerFileNameResolver());
 
         await service.DownloadAsync(CreateUpdate());
 

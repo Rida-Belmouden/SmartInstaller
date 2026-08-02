@@ -1,3 +1,5 @@
+using SmartInstaller.Agent.Core.Download.Resume;
+
 namespace SmartInstaller.Agent.Core.Download.Cache;
 
 public interface IFileCacheService
@@ -21,4 +23,6 @@ public interface IFileCacheService
         bool overwrite);
 
     long GetTemporaryFileSize(string fileName);
+
+    ResumeMetadata GetResumeMetadata(string fileName);
 }

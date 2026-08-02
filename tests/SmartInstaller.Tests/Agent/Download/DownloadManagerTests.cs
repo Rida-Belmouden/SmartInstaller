@@ -3,6 +3,7 @@ using SmartInstaller.Agent.Core.Download.Http;
 using SmartInstaller.Agent.Core.Download.Models;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Download.Verification;
+using SmartInstaller.Agent.Core.Download.Resume;
 
 namespace SmartInstaller.Tests.Agent.Download;
 
@@ -334,6 +335,19 @@ public sealed class DownloadManagerTests
             {
                 File.Delete(filePath);
             }
+        }
+
+        public ResumeMetadata GetResumeMetadata(string fileName)
+        {
+            var temporaryPath = GetTemporaryPath(fileName);
+            var exists = File.Exists(temporaryPath);
+
+            return new ResumeMetadata(
+                temporaryPath,
+                exists,
+                exists
+                    ? new FileInfo(temporaryPath).Length
+                    : 0);
         }
     }
 }
