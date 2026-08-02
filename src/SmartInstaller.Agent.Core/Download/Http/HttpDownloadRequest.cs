@@ -6,4 +6,5 @@ public sealed record HttpDownloadRequest(
     Uri DownloadUrl,
     string DestinationPath,
     long? ExpectedFileSizeBytes,
-    IProgress<DownloadProgress>? Progress);
+    IProgress<DownloadProgress>? Progress,
+    long ResumeOffsetBytes = 0);

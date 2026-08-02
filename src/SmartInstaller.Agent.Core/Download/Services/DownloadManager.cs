@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using SmartInstaller.Agent.Core.Download.Cache;
 using SmartInstaller.Agent.Core.Download.Http;
 using SmartInstaller.Agent.Core.Download.Models;
@@ -22,12 +23,16 @@ public sealed class DownloadManager(
         var validationError = ValidateRequest(request);
 
         if (validationError is not null)
-            return DownloadResult.Failed(validationError);
+        {
+            return DownloadResult.Failed(
+                validationError);
+        }
 
         fileCacheService.EnsureCacheDirectoryExists();
 
-        var finalPath = fileCacheService.GetFinalPath(
-            request.FileName);
+        var finalPath =
+            fileCacheService.GetFinalPath(
+                request.FileName);
 
         if (!request.Overwrite &&
             fileCacheService.IsReusable(
@@ -42,38 +47,50 @@ public sealed class DownloadManager(
 
             if (cachedVerification.Success)
             {
-                return DownloadResult.Cached(finalPath);
+                return DownloadResult.Cached(
+                    finalPath);
             }
 
-            // The cached file is corrupted or does not match
-            // the expected hash, so remove it and download again.
             fileCacheService.DeleteFinalFile(
                 request.FileName);
         }
 
-        fileCacheService.DeleteTemporaryFile(request.FileName);
+        if (request.Overwrite)
+        {
+            fileCacheService.DeleteTemporaryFile(
+                request.FileName);
+        }
 
         var stopwatch = Stopwatch.StartNew();
 
-        var httpResult = await httpDownloader.DownloadAsync(
-            new HttpDownloadRequest(
-                request.DownloadUrl,
-                fileCacheService.GetTemporaryPath(request.FileName),
-                request.ExpectedFileSizeBytes,
-                progress),
-            cancellationToken);
+        var httpResult =
+            await httpDownloader.DownloadAsync(
+                new HttpDownloadRequest(
+                    request.DownloadUrl,
+                    fileCacheService.GetTemporaryPath(
+                        request.FileName),
+                    request.ExpectedFileSizeBytes,
+                    progress),
+                cancellationToken);
 
         if (httpResult.Cancelled)
         {
-            fileCacheService.DeleteTemporaryFile(request.FileName);
-            return DownloadResult.Cancelled(stopwatch.Elapsed);
+            return DownloadResult.Cancelled(
+                stopwatch.Elapsed);
         }
 
         if (!httpResult.Success)
         {
-            fileCacheService.DeleteTemporaryFile(request.FileName);
+            if (!ShouldPreservePartialFile(
+                    httpResult))
+            {
+                fileCacheService.DeleteTemporaryFile(
+                    request.FileName);
+            }
+
             return DownloadResult.Failed(
-                httpResult.ErrorMessage ?? "The download failed.",
+                httpResult.ErrorMessage ??
+                "The download failed.",
                 stopwatch.Elapsed);
         }
 
@@ -82,7 +99,8 @@ public sealed class DownloadManager(
                 request.FileName);
 
         if (request.ExpectedFileSizeBytes.HasValue &&
-            downloadedLength != request.ExpectedFileSizeBytes.Value)
+            downloadedLength !=
+            request.ExpectedFileSizeBytes.Value)
         {
             fileCacheService.DeleteTemporaryFile(
                 request.FileName);
@@ -106,9 +124,6 @@ public sealed class DownloadManager(
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested)
         {
-            fileCacheService.DeleteTemporaryFile(
-                request.FileName);
-
             return DownloadResult.Cancelled(
                 stopwatch.Elapsed);
         }
@@ -138,29 +153,43 @@ public sealed class DownloadManager(
         }
         catch (IOException exception)
         {
-            fileCacheService.DeleteTemporaryFile(
-                request.FileName);
-
             return DownloadResult.Failed(
                 $"The downloaded file could not be finalized: {exception.Message}",
                 stopwatch.Elapsed);
         }
         catch (UnauthorizedAccessException exception)
         {
-            fileCacheService.DeleteTemporaryFile(
-                request.FileName);
-
             return DownloadResult.Failed(
                 $"Access to the download cache was denied: {exception.Message}",
                 stopwatch.Elapsed);
         }
     }
 
+    private static bool ShouldPreservePartialFile(
+        HttpDownloadResult result)
+    {
+        if (result.Cancelled ||
+            result.IsTransientException)
+        {
+            return true;
+        }
+
+        return result.StatusCode is
+            HttpStatusCode.RequestTimeout or
+            HttpStatusCode.TooManyRequests or
+            HttpStatusCode.InternalServerError or
+            HttpStatusCode.BadGateway or
+            HttpStatusCode.ServiceUnavailable or
+            HttpStatusCode.GatewayTimeout;
+    }
+
     private static string? ValidateRequest(
         DownloadRequest request)
     {
         if (!request.DownloadUrl.IsAbsoluteUri)
+        {
             return "The download URL must be absolute.";
+        }
 
         if (!string.Equals(
                 request.DownloadUrl.Scheme,
@@ -174,17 +203,26 @@ public sealed class DownloadManager(
             return "Only HTTP and HTTPS download URLs are supported.";
         }
 
-        if (string.IsNullOrWhiteSpace(request.FileName))
+        if (string.IsNullOrWhiteSpace(
+                request.FileName))
+        {
             return "The download file name is required.";
+        }
 
         if (request.ExpectedFileSizeBytes is < 0)
+        {
             return "The expected file size cannot be negative.";
+        }
 
-        if (!string.IsNullOrWhiteSpace(request.Sha256))
+        if (!string.IsNullOrWhiteSpace(
+                request.Sha256))
         {
             var normalized = request.Sha256
                 .Trim()
-                .Replace("-", string.Empty, StringComparison.Ordinal);
+                .Replace(
+                    "-",
+                    string.Empty,
+                    StringComparison.Ordinal);
 
             if (normalized.Length != 64 ||
                 !normalized.All(Uri.IsHexDigit))
