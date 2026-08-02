@@ -9,6 +9,7 @@ using SmartInstaller.Agent.Core.Download.Retry;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Download.Verification;
 using SmartInstaller.Agent.Core.Download.Resume;
+using SmartInstaller.Agent.Core.Download.Queue;
 using SmartInstaller.Agent.Core.Installation.Commands;
 using SmartInstaller.Agent.Core.Installation.Processes;
 using SmartInstaller.Agent.Core.Installation.Services;
@@ -28,6 +29,7 @@ public static class DependencyInjection
         services.Configure<DownloadOptions>(configuration.GetSection(DownloadOptions.SectionName));
         services.Configure<RetryOptions>(configuration.GetSection(RetryOptions.SectionName));
         services.Configure<InstallationOptions>(configuration.GetSection(InstallationOptions.SectionName));
+        services.Configure<ConcurrentDownloadOptions>(configuration.GetSection(ConcurrentDownloadOptions.SectionName));
 
         services.AddSingleton<IApplicationNameNormalizer, ApplicationNameNormalizer>();
         services.AddSingleton<IInstalledSoftwareScanner, InstalledSoftwareScanner>();
@@ -52,6 +54,7 @@ public static class DependencyInjection
         services.AddTransient<IUpdateInstallationService, UpdateInstallationService>();
         services.AddTransient<IInstallationVerifier, InstallationVerifier>();
         services.AddTransient<IUpdateDownloadStateService, UpdateDownloadStateService>();
+        services.AddTransient<IConcurrentDownloadManager, ConcurrentDownloadManager>();
 
         services.AddHttpClient<IAgentApiClient, AgentApiClient>((provider, client) =>
         {

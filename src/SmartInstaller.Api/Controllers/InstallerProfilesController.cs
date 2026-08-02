@@ -19,24 +19,34 @@ public sealed class InstallerProfilesController(
         StatusCodes.Status200OK)]
     public async Task<
         ActionResult<ApiResponse<IReadOnlyList<InstallerProfileDto>>>> GetAll(
-        [FromQuery] Guid? applicationVersionId,
-        [FromQuery] Guid? installerTypeId,
-        [FromQuery] Guid? architectureId,
-        [FromQuery] bool? isEnabled,
+        [FromQuery(Name = "applicationVersionPublicId")]
+    Guid? applicationVersionPublicId,
+
+        [FromQuery(Name = "installerTypePublicId")]
+    Guid? installerTypePublicId,
+
+        [FromQuery(Name = "architecturePublicId")]
+    Guid? architecturePublicId,
+
+        [FromQuery]
+    bool? isEnabled,
+
         CancellationToken cancellationToken)
     {
         var query = new GetInstallerProfilesQuery(
-            applicationVersionId,
-            installerTypeId,
-            architectureId,
+            applicationVersionPublicId,
+            installerTypePublicId,
+            architecturePublicId,
             isEnabled);
 
-        var profiles = await getInstallerProfilesHandler.HandleAsync(
-            query,
-            cancellationToken);
+        var profiles =
+            await getInstallerProfilesHandler.HandleAsync(
+                query,
+                cancellationToken);
 
         return Ok(
-            ApiResponse<IReadOnlyList<InstallerProfileDto>>.Ok(profiles));
+            ApiResponse<IReadOnlyList<InstallerProfileDto>>
+                .Ok(profiles));
     }
 
     [HttpGet("{publicId:guid}")]
