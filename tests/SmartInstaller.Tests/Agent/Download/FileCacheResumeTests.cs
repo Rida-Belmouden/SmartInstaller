@@ -23,7 +23,7 @@ public sealed class FileCacheResumeTests : IDisposable
         Assert.Equal(0, metadata.ExistingBytes);
         Assert.EndsWith(
             "setup.exe.download",
-            metadata.TemporaryFilePath);
+            metadata.TemporaryPath);
     }
 
     [Fact]

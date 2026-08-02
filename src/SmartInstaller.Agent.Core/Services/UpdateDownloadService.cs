@@ -1,4 +1,3 @@
-using System.Text;
 using SmartInstaller.Agent.Core.Download.Models;
 using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Models;
@@ -7,7 +6,8 @@ namespace SmartInstaller.Agent.Core.Services;
 
 public sealed class UpdateDownloadService(
     IAgentApiClient agentApiClient,
-    IDownloadManager downloadManager)
+    IDownloadManager downloadManager,
+    IInstallerFileNameResolver fileNameResolver)
     : IUpdateDownloadService
 {
     public async Task<UpdateDownloadResult> DownloadAsync(
@@ -35,9 +35,10 @@ public sealed class UpdateDownloadService(
                     "No compatible installer profile is available for this update."));
         }
 
-        var manifest = await agentApiClient.GetInstallerManifestAsync(
-            update.InstallerProfileId.Value,
-            cancellationToken);
+        var manifest =
+            await agentApiClient.GetInstallerManifestAsync(
+                update.InstallerProfileId.Value,
+                cancellationToken);
 
         if (!Uri.TryCreate(
                 manifest.DownloadUrl,
@@ -53,59 +54,21 @@ public sealed class UpdateDownloadService(
 
         var request = new DownloadRequest(
             downloadUri,
-            CreateFileName(manifest, downloadUri),
+            fileNameResolver.Resolve(
+                manifest,
+                downloadUri),
             manifest.Sha256,
             manifest.FileSizeBytes);
 
-        var result = await downloadManager.DownloadAsync(
-            request,
-            progress,
-            cancellationToken);
+        var result =
+            await downloadManager.DownloadAsync(
+                request,
+                progress,
+                cancellationToken);
 
         return new UpdateDownloadResult(
             update,
             manifest,
             result);
-    }
-
-    private static string CreateFileName(
-        InstallerManifest manifest,
-        Uri downloadUri)
-    {
-        var sourceFileName = Path.GetFileName(
-            Uri.UnescapeDataString(downloadUri.AbsolutePath));
-
-        if (!string.IsNullOrWhiteSpace(sourceFileName) &&
-            sourceFileName.IndexOfAny(
-                Path.GetInvalidFileNameChars()) < 0)
-        {
-            return sourceFileName;
-        }
-
-        var extension = manifest.InstallerType.ToLowerInvariant() switch
-        {
-            "msi" => ".msi",
-            "msix" => ".msix",
-            "zip" => ".zip",
-            _ => ".exe"
-        };
-
-        return $"{Sanitize(manifest.ApplicationName)}-{Sanitize(manifest.Version)}-{Sanitize(manifest.Architecture)}{extension}";
-    }
-
-    private static string Sanitize(string value)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var builder = new StringBuilder(value.Length);
-
-        foreach (var character in value.Trim())
-        {
-            builder.Append(
-                invalid.Contains(character) || char.IsWhiteSpace(character)
-                    ? '-'
-                    : character);
-        }
-
-        return builder.ToString().Trim('-');
     }
 }

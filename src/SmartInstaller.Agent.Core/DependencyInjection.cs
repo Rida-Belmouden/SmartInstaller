@@ -43,7 +43,7 @@ public static class DependencyInjection
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IInstallationVerificationDelay, InstallationVerificationDelay>();
         services.AddSingleton<IResumePolicy, ResumePolicy>();
-
+        services.AddSingleton<IInstallerFileNameResolver, InstallerFileNameResolver>();
 
         services.AddTransient<IHttpDownloader, RetryingHttpDownloader>();
         services.AddTransient<IDownloadManager, DownloadManager>();
@@ -51,6 +51,7 @@ public static class DependencyInjection
         services.AddTransient<IInstallerService, InstallerService>();
         services.AddTransient<IUpdateInstallationService, UpdateInstallationService>();
         services.AddTransient<IInstallationVerifier, InstallationVerifier>();
+        services.AddTransient<IUpdateDownloadStateService, UpdateDownloadStateService>();
 
         services.AddHttpClient<IAgentApiClient, AgentApiClient>((provider, client) =>
         {
