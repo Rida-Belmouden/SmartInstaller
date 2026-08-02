@@ -55,7 +55,7 @@
                     Margin="10,0,0,0" MinWidth="145" Padding="18,10"
                     Click="DownloadSelectedButton_Click"
                     Content="Download selected" IsEnabled="False"
-                    ToolTip="Download or resume selected updates" />
+                    ToolTip="Download or resume selected updates concurrently" />
 
             <Button x:Name="InstallSelectedButton" Grid.Column="3"
                     Margin="10,0,0,0" MinWidth="130" Padding="18,10"
