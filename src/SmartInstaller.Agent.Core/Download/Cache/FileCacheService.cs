@@ -1,3 +1,5 @@
+using SmartInstaller.Agent.Core.Download.Resume;
+
 namespace SmartInstaller.Agent.Core.Download.Cache;
 
 public sealed class FileCacheService(
@@ -59,6 +61,20 @@ public sealed class FileCacheService(
     {
         return new FileInfo(
             GetTemporaryPath(fileName)).Length;
+    }
+
+    public ResumeMetadata GetResumeMetadata(
+        string fileName)
+    {
+        var path = GetTemporaryPath(fileName);
+        var exists = File.Exists(path);
+
+        return new ResumeMetadata(
+            path,
+            exists,
+            exists
+                ? new FileInfo(path).Length
+                : 0);
     }
 
     private static void DeleteIfExists(string filePath)
