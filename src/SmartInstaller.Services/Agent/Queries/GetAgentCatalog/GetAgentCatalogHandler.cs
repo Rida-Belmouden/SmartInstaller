@@ -15,6 +15,7 @@ public sealed class GetAgentCatalogHandler(ApplicationDbContext dbContext)
 
         var applications = await dbContext.Applications
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(application => application.Publisher)
             .Include(application => application.Versions)
                 .ThenInclude(version => version.InstallerProfiles)

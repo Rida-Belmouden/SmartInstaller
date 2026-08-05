@@ -34,8 +34,14 @@ public sealed class ApplicationsApiTests
         Assert.True(result.Success);
         Assert.NotNull(result.Data);
 
-        Assert.Equal(5, result.Data.TotalItems);
-        Assert.Equal(5, result.Data.Items.Count);
+        Assert.Equal(7, result.Data.TotalItems);
+        Assert.Equal(7, result.Data.Items.Count);
+        Assert.Contains(
+            result.Data.Items,
+            application => application.Name == "Notepad++");
+        Assert.Contains(
+            result.Data.Items,
+            application => application.Name == "Audacity");
     }
 
     [Fact]

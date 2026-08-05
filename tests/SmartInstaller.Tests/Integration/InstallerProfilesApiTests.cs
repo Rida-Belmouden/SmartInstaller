@@ -97,7 +97,7 @@ public sealed class InstallerProfilesApiTests
         var created = await CreateInstallerProfileAsync();
 
         var response = await _client.GetAsync(
-            $"/api/installer-profiles?applicationVersionId={created.ApplicationVersionPublicId}");
+            $"/api/installer-profiles?applicationVersionPublicId={created.ApplicationVersionPublicId}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
