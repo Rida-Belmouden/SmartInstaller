@@ -20,9 +20,12 @@ The current implementation provides:
 - name normalization and catalog matching;
 - update detection based on installed and latest catalog versions;
 - installer manifests containing download and silent-install metadata;
+- concurrent, resumable, and verified downloads;
+- per-item pause, resume, and cancellation controls;
+- silent installation with post-install verification;
 - automated unit and integration tests.
 
-SmartInstaller is inspired by the simplicity of tools such as Ninite, while being designed as an extensible learning and product-development project. The downloader and silent installation engine are **not implemented yet**.
+SmartInstaller is inspired by the simplicity of tools such as Ninite, while being designed as an extensible learning and product-development project.
 
 ## Current capabilities
 
@@ -82,6 +85,12 @@ The WPF agent currently supports:
 - normalizing application names such as `7-Zip 26.01 (x64)` to match catalog entries such as `7-Zip`;
 - connecting to the SmartInstaller API;
 - displaying matched applications and available updates;
+- downloading multiple updates concurrently;
+- resuming partial downloads and reusing verified cached files;
+- retrying transient failures and verifying SHA-256 checksums;
+- pausing, resuming, or cancelling individual downloads;
+- displaying queue position, per-item speed, ETA, and live queue statistics;
+- silently installing selected updates and verifying the installed version;
 - canceling long-running scan and synchronization operations.
 
 ### Admin catalog dashboard
@@ -335,7 +344,7 @@ Run the complete test suite:
 dotnet test SmartInstaller.slnx
 ```
 
-The repository currently defines **42 xUnit test cases**, covering:
+The repository currently defines **132 xUnit test cases**, covering:
 
 - public catalog queries and filters;
 - application-version creation, update, latest selection, and deletion;
@@ -344,7 +353,12 @@ The repository currently defines **42 xUnit test cases**, covering:
 - update detection;
 - installer-manifest retrieval;
 - application-name normalization;
-- installed-application matching and duplicate handling.
+- installed-application matching and duplicate handling;
+- HTTP downloads, retry policies, caching, and SHA-256 verification;
+- resumable range downloads;
+- concurrent queue execution and per-item controls;
+- download-session telemetry;
+- silent installation and post-install verification.
 
 The API integration tests run against an isolated SQLite in-memory database through `WebApplicationFactory`.
 
@@ -381,15 +395,19 @@ dotnet ef migrations add MigrationName \
 - Windows installed-software scanner.
 - Name normalization and catalog matching.
 - End-to-end update detection in the WPF agent.
+- Concurrent and resumable download engine.
+- Retry, cache, and SHA-256 verification.
+- Per-item pause, resume, and cancellation.
+- Queue positions, speed, ETA, and live download statistics.
+- Silent installation and installed-version verification.
 - Admin catalog dashboard for versions and installer profiles.
 - Unit and integration tests.
 
 ### Next milestones
 
-- Download manager with progress, cancellation, retry, and cache support.
-- SHA-256 verification after download.
-- Silent installation engine for EXE, MSI, MSIX, and ZIP packages.
-- Update execution workflow and result reporting.
+- Background update service and tray integration.
+- Scheduling and automatic update policies.
+- Persistent update execution history and result reporting.
 - Authentication and authorization for admin endpoints.
 - Full CRUD for applications and catalog reference data.
 - Device inventory and update history.
@@ -399,10 +417,10 @@ dotnet ef migrations add MigrationName \
 
 SmartInstaller is currently under active development:
 
-- it detects available updates but does not download or install them yet;
 - admin endpoints are not protected by authentication;
 - the dashboard manages versions and installer profiles for existing seeded applications only;
 - package metadata and download links must be curated by an administrator;
+- downloads and installations currently run while the WPF agent is open;
 - production deployment, signing, and hardened security configuration are not yet provided.
 
 ## Contributing

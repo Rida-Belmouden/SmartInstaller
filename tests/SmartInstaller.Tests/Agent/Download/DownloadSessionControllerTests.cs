@@ -17,7 +17,7 @@ public sealed class DownloadSessionControllerTests
         var events = new List<DownloadSessionEvent>();
         var controller = new DownloadSessionController(
             new TelemetryDownloadManager(),
-            new NullDownloadStateService(),
+            new FixedDownloadStateService(null),
             new NullFileCacheService());
 
         controller.SessionEvent += (_, sessionEvent) =>
@@ -57,6 +57,60 @@ public sealed class DownloadSessionControllerTests
                 Completed: 2,
                 Active: 0,
                 Queued: 0
+            });
+    }
+
+    [Fact]
+    public async Task CancelAll_WithPartialFile_ReportsPausedControls()
+    {
+        var update = CreateUpdates(1)[0];
+        var manifest = new InstallerManifest(
+            update.InstallerProfileId!.Value,
+            update.ApplicationId,
+            update.ApplicationName,
+            Guid.NewGuid(),
+            update.LatestVersion,
+            "exe",
+            "x64",
+            "https://example.test/app.exe",
+            null,
+            100,
+            null,
+            null,
+            false,
+            false);
+        var state = new UpdateDownloadState(
+            manifest,
+            "app.exe",
+            @"C:\Cache\app.exe.download",
+            @"C:\Cache\app.exe",
+            false,
+            50,
+            100);
+        var events = new List<DownloadSessionEvent>();
+        var controller = new DownloadSessionController(
+            new CancelledDownloadManager(),
+            new FixedDownloadStateService(state),
+            new NullFileCacheService());
+
+        controller.SessionEvent += (_, sessionEvent) =>
+            events.Add(sessionEvent);
+
+        await controller.StartAsync([update]);
+
+        Assert.Contains(events, sessionEvent =>
+            sessionEvent.Item is
+            {
+                Status: "Paused",
+                CanResume: true,
+                CanCancel: true
+            });
+
+        Assert.Contains(events, sessionEvent =>
+            sessionEvent.Statistics is
+            {
+                Paused: 1,
+                Cancelled: 0
             });
     }
 
@@ -167,13 +221,50 @@ public sealed class DownloadSessionControllerTests
                     null));
     }
 
-    private sealed class NullDownloadStateService
+    private sealed class CancelledDownloadManager
+        : IConcurrentDownloadManager
+    {
+        public Task<ConcurrentDownloadResult> DownloadAsync(
+            IReadOnlyCollection<UpdateCheckItem> updates,
+            IProgress<DownloadQueueItemProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            var update = Assert.Single(updates);
+
+            return Task.FromResult(
+                new ConcurrentDownloadResult(
+                [
+                    new DownloadQueueItemResult(
+                        0,
+                        update,
+                        DownloadQueueStatus.Cancelled,
+                        null,
+                        "Canceled")
+                    {
+                        CancellationReason =
+                            DownloadQueueCancellationReason.CancelAll
+                    }
+                ]));
+        }
+
+        public bool PauseItem(UpdateCheckItem update) =>
+            false;
+
+        public bool ResumeItem(UpdateCheckItem update) =>
+            false;
+
+        public bool CancelItem(UpdateCheckItem update) =>
+            false;
+    }
+
+    private sealed class FixedDownloadStateService(
+        UpdateDownloadState? state)
         : IUpdateDownloadStateService
     {
         public Task<UpdateDownloadState?> GetStateAsync(
             UpdateCheckItem update,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<UpdateDownloadState?>(null);
+            Task.FromResult(state);
     }
 
     private sealed class NullFileCacheService

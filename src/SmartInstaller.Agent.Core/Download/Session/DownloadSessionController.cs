@@ -332,7 +332,9 @@ public sealed class DownloadSessionController(
                 DownloadQueueCancellationReason.CancelItem &&
             item.Status != DownloadQueueStatus.Completed;
 
-        var telemetry = TrackResult(item);
+        var telemetry = TrackResult(
+            item,
+            hasManageablePartial);
 
         PublishItem(new DownloadSessionItemState(
             item.Update,
@@ -435,7 +437,8 @@ public sealed class DownloadSessionController(
     }
 
     private TelemetryUpdate TrackResult(
-        DownloadQueueItemResult result)
+        DownloadQueueItemResult result,
+        bool hasManageablePartial)
     {
         lock (_telemetrySync)
         {
@@ -451,8 +454,13 @@ public sealed class DownloadSessionController(
                 _telemetry[key] = entry;
             }
 
-            entry.Status = result.Status;
-            entry.IsTerminal = true;
+            entry.Status = hasManageablePartial &&
+                           result.Status ==
+                               DownloadQueueStatus.Cancelled
+                ? DownloadQueueStatus.Paused
+                : result.Status;
+            entry.IsTerminal =
+                entry.Status != DownloadQueueStatus.Paused;
             entry.BytesPerSecond = 0;
 
             return CreateTelemetryUpdate(key);

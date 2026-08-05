@@ -25,10 +25,11 @@ public partial class MainWindow : Window
     private readonly IUpdateInstallationService _updateInstallationService;
     private readonly ObservableCollection<InstalledApplication> _applications = [];
     private readonly ObservableCollection<UpdateRow> _updates = [];
-    private readonly ICollectionView _applicationsView;    
+    private readonly ICollectionView _applicationsView;
 
     private CancellationTokenSource? _operationCancellationTokenSource;
     private bool _isBusy;
+    private volatile bool _isClosed;
 
     public MainWindow(
         IInstalledSoftwareScanner scanner,
@@ -232,9 +233,20 @@ public partial class MainWindow : Window
         object? sender,
         DownloadSessionEvent sessionEvent)
     {
+        if (_isClosed)
+        {
+            return;
+        }
+
         if (!Dispatcher.CheckAccess())
         {
-            Dispatcher.Invoke(
+            if (Dispatcher.HasShutdownStarted ||
+                Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            _ = Dispatcher.BeginInvoke(
                 () => DownloadSessionController_SessionEvent(
                     sender,
                     sessionEvent));
@@ -314,7 +326,9 @@ public partial class MainWindow : Window
                 $"Active: {statistics.Active}  " +
                 $"Queued: {statistics.Queued}  " +
                 $"Paused: {statistics.Paused}  " +
-                $"Completed: {statistics.Completed}";
+                $"Completed: {statistics.Completed}  " +
+                $"Failed: {statistics.Failed}  " +
+                $"Canceled: {statistics.Cancelled}";
 
             TotalSpeedText.Text =
                 $"Total: {FormatSpeed(statistics.BytesPerSecond)}";
@@ -837,6 +851,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _isClosed = true;
         _downloadSessionController.SessionEvent -=
             DownloadSessionController_SessionEvent;
         _downloadSessionController.CancelAll();
