@@ -10,6 +10,7 @@ using SmartInstaller.Agent.Core.Download.Services;
 using SmartInstaller.Agent.Core.Download.Verification;
 using SmartInstaller.Agent.Core.Download.Resume;
 using SmartInstaller.Agent.Core.Download.Queue;
+using SmartInstaller.Agent.Core.Download.Session;
 using SmartInstaller.Agent.Core.Installation.Commands;
 using SmartInstaller.Agent.Core.Installation.Processes;
 using SmartInstaller.Agent.Core.Installation.Services;
@@ -55,6 +56,7 @@ public static class DependencyInjection
         services.AddTransient<IInstallationVerifier, InstallationVerifier>();
         services.AddTransient<IUpdateDownloadStateService, UpdateDownloadStateService>();
         services.AddTransient<IConcurrentDownloadManager, ConcurrentDownloadManager>();
+        services.AddTransient<IDownloadSessionController, DownloadSessionController>();
 
         services.AddHttpClient<IAgentApiClient, AgentApiClient>((provider, client) =>
         {
