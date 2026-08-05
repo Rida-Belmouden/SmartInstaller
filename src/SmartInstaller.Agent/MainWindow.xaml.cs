@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.IO;
 using SmartInstaller.Agent.Core.Download.Models;
+using SmartInstaller.Agent.Core.Download.Session;
 using SmartInstaller.Agent.Core.Installation.Models;
 using SmartInstaller.Agent.Core.Installation.Verification;
 using SmartInstaller.Agent.Core.Models;
@@ -19,20 +20,21 @@ public partial class MainWindow : Window
 {
     private readonly IInstalledSoftwareScanner _scanner;
     private readonly IUpdateSynchronizationService _synchronizationService;
-    private readonly IUpdateDownloadService _updateDownloadService;
+    private readonly IDownloadSessionController _downloadSessionController;
     private readonly IUpdateDownloadStateService _updateDownloadStateService;
     private readonly IUpdateInstallationService _updateInstallationService;
     private readonly ObservableCollection<InstalledApplication> _applications = [];
     private readonly ObservableCollection<UpdateRow> _updates = [];
-    private readonly ICollectionView _applicationsView;    
+    private readonly ICollectionView _applicationsView;
 
     private CancellationTokenSource? _operationCancellationTokenSource;
     private bool _isBusy;
+    private volatile bool _isClosed;
 
     public MainWindow(
         IInstalledSoftwareScanner scanner,
         IUpdateSynchronizationService synchronizationService,
-        IUpdateDownloadService updateDownloadService,
+        IDownloadSessionController downloadSessionController,
         IUpdateDownloadStateService updateDownloadStateService,
         IUpdateInstallationService updateInstallationService,
         ISystemArchitectureDetector architectureDetector)
@@ -41,7 +43,7 @@ public partial class MainWindow : Window
 
         _scanner = scanner;
         _synchronizationService = synchronizationService;
-        _updateDownloadService = updateDownloadService;
+        _downloadSessionController = downloadSessionController;
         _updateDownloadStateService = updateDownloadStateService;
         _updateInstallationService = updateInstallationService;
 
@@ -53,6 +55,9 @@ public partial class MainWindow : Window
             CollectionViewSource.GetDefaultView(_applications);
 
         _applicationsView.Filter = FilterApplication;
+
+        _downloadSessionController.SessionEvent +=
+            DownloadSessionController_SessionEvent;
     }
 
     private async void ScanButton_Click(
@@ -169,162 +174,180 @@ public partial class MainWindow : Window
             return;
         }
 
+        await RunDownloadSessionAsync(selected);
+    }
+
+    private async Task RunDownloadSessionAsync(
+        IReadOnlyCollection<UpdateRow> rows)
+    {
         BeginOperation(
-            $"Downloading {selected.Length} update(s)...");
+            $"Downloading {rows.Count} update(s) concurrently...");
+
+        foreach (var row in rows)
+        {
+            var wasPaused =
+                row.HasPartialDownload;
+
+            row.IsDownloading = true;
+            row.Status = "Queued";
+
+            if (!wasPaused)
+            {
+                row.Percentage = 0;
+                row.InitialPartialBytes = 0;
+            }
+        }
 
         try
         {
-            var completed = 0;
-
-            foreach (var row in selected)
-            {
-                CurrentToken.ThrowIfCancellationRequested();
-
-                var wasPaused = row.HasPartialDownload;
-
-                row.Status = wasPaused
-                    ? "Preparing to resume"
-                    : "Preparing download";
-
-                if (!wasPaused)
-                {
-                    row.Percentage = 0;
-                }
-
-                row.IsDownloading = true;
-
-                var progress =
-                    new Progress<DownloadProgress>(value =>
-                    {
-                        row.Percentage =
-                            value.Percentage ??
-                            row.Percentage;
-
-                        row.Status =
-                            wasPaused ||
-                            value.BytesReceived > 0 &&
-                            row.InitialPartialBytes > 0
-                                ? "Resuming"
-                                : "Downloading";
-
-                        StatusText.Text =
-                            $"{row.Status} {row.ApplicationName}: {row.ProgressText}";
-                    });
-
-                var result =
-                    await _updateDownloadService.DownloadAsync(
-                        row.Update,
-                        progress,
-                        CurrentToken);
-
-                row.Manifest = result.Manifest;
-                row.FilePath =
-                    result.DownloadResult.FilePath;
-                row.IsDownloading = false;
-
-                if (result.DownloadResult.Status ==
-                    DownloadStatus.Cancelled)
-                {
-                    await RefreshDownloadStateAsync(
-                        row,
-                        CancellationToken.None);
-
-                    row.Status = row.HasPartialDownload
-                        ? "Paused"
-                        : "Canceled";
-
-                    row.IsSelected =
-                        row.HasPartialDownload;
-
-                    row.NotifyAvailabilityChanged();
-                    RefreshActionButtons();
-                }
-                else
-                {
-                    row.Status =
-                        result.DownloadResult.Status switch
-                        {
-                            DownloadStatus.Completed =>
-                                "Downloaded and verified",
-
-                            DownloadStatus.Cached =>
-                                "Ready from cache",
-
-                            DownloadStatus.VerificationFailed =>
-                                "Verification failed",
-
-                            _ =>
-                                result.DownloadResult.ErrorMessage ??
-                                "Download failed"
-                        };
-
-                    if (result.DownloadResult.IsSuccess)
-                    {
-                        row.Percentage = 100;
-                        row.IsSelected = true;
-                        row.HasPartialDownload = false;
-                        completed++;
-                    }
-                    else
-                    {
-                        await RefreshDownloadStateAsync(
-                            row,
-                            CurrentToken);
-
-                        row.IsSelected =
-                            row.HasPartialDownload;
-                    }
-                }
-
-                row.NotifyAvailabilityChanged();
-            }
-
-            StatusText.Text =
-                $"Download operation completed. {completed}/{selected.Length} installer(s) ready.";
+            await _downloadSessionController.StartAsync(
+                rows
+                    .Select(row => row.Update)
+                    .ToArray(),
+                CurrentToken);
         }
         catch (OperationCanceledException)
         {
-            foreach (var row in selected)
-            {
-                row.IsDownloading = false;
-
-                await RefreshDownloadStateAsync(
-                    row,
-                    CancellationToken.None);
-
-                if (row.HasPartialDownload)
-                {
-                    row.Status = "Paused";
-                    row.IsSelected = true;
-                }
-                else
-                {
-                    row.Status = "Canceled";
-                    row.IsSelected = false;
-                }
-
-                row.NotifyAvailabilityChanged();
-            }
-
             StatusText.Text =
-                "Download operation canceled.";
-        }
-        catch (HttpRequestException exception)
-        {
-            ShowError(
-                "Could not retrieve the installer manifest.",
-                exception);
+                "Concurrent download operation canceled.";
         }
         catch (Exception exception)
         {
             ShowError(
-                "The download operation failed.",
+                "The concurrent download operation failed.",
                 exception);
         }
         finally
         {
+            foreach (var row in rows)
+            {
+                row.IsDownloading = false;
+                row.NotifyAvailabilityChanged();
+            }
+
             EndOperation();
         }
+    }
+
+    private void DownloadSessionController_SessionEvent(
+        object? sender,
+        DownloadSessionEvent sessionEvent)
+    {
+        if (_isClosed)
+        {
+            return;
+        }
+
+        if (!Dispatcher.CheckAccess())
+        {
+            if (Dispatcher.HasShutdownStarted ||
+                Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            _ = Dispatcher.BeginInvoke(
+                () => DownloadSessionController_SessionEvent(
+                    sender,
+                    sessionEvent));
+            return;
+        }
+
+        if (sessionEvent.Item is not null)
+        {
+            var item = sessionEvent.Item;
+            var row = _updates.FirstOrDefault(candidate =>
+                candidate.Update.ApplicationId ==
+                    item.Update.ApplicationId &&
+                candidate.Update.InstallerProfileId ==
+                    item.Update.InstallerProfileId);
+
+            if (row is null)
+            {
+                return;
+            }
+
+            var isResuming =
+                row.HasPartialDownload ||
+                row.InitialPartialBytes > 0;
+
+            row.Status = item.Status switch
+            {
+                "Starting" when isResuming =>
+                    "Preparing to resume",
+                "Downloading" when isResuming =>
+                    "Resuming",
+                _ => item.Status
+            };
+            row.Percentage =
+                item.Percentage > 0
+                    ? item.Percentage
+                    : row.Percentage;
+            row.IsDownloading = item.IsDownloading;
+            if (!item.IsDownloading)
+            {
+                row.HasPartialDownload =
+                    item.HasPartialDownload;
+                row.InitialPartialBytes =
+                    item.InitialPartialBytes;
+            }
+            row.Manifest = item.Manifest ?? row.Manifest;
+            row.FilePath = item.FilePath;
+            row.CanPause = item.CanPause;
+            row.CanResumeItem = item.CanResume;
+            row.CanCancel = item.CanCancel;
+            row.QueuePosition = item.QueuePosition;
+            row.BytesPerSecond = item.BytesPerSecond;
+            row.RemainingTime = item.RemainingTime;
+            if (!item.IsDownloading)
+            {
+                row.IsSelected =
+                    item.HasPartialDownload ||
+                    item.Percentage >= 100;
+            }
+            row.NotifyAvailabilityChanged();
+
+            if (item.IsDownloading &&
+                item.Status is "Downloading")
+            {
+                StatusText.Text =
+                    $"{row.Status} {row.ApplicationName}: " +
+                    $"{row.ProgressText}";
+            }
+
+            return;
+        }
+
+        if (sessionEvent.Statistics is not null)
+        {
+            var statistics = sessionEvent.Statistics;
+
+            QueueSummaryText.Text =
+                $"Active: {statistics.Active}  " +
+                $"Queued: {statistics.Queued}  " +
+                $"Paused: {statistics.Paused}  " +
+                $"Completed: {statistics.Completed}  " +
+                $"Failed: {statistics.Failed}  " +
+                $"Canceled: {statistics.Cancelled}";
+
+            TotalSpeedText.Text =
+                $"Total: {FormatSpeed(statistics.BytesPerSecond)}";
+
+            return;
+        }
+
+        StatusText.Text = sessionEvent.Type switch
+        {
+            DownloadSessionEventType.SessionStarted =>
+                sessionEvent.Message ?? "Download session started.",
+            DownloadSessionEventType.SessionCompleted =>
+                $"Concurrent downloads completed. {sessionEvent.Message}",
+            DownloadSessionEventType.SessionCancelled =>
+                sessionEvent.Message ?? "Download session canceled.",
+            DownloadSessionEventType.SessionFailed =>
+                $"Download session failed. {sessionEvent.Message}",
+            _ => StatusText.Text
+        };
     }
 
     private async void InstallSelectedButton_Click(
@@ -610,14 +633,99 @@ public partial class MainWindow : Window
     {
         _isBusy = false;
         SetBusyState(false);
-        RefreshActionButtons();
     }
 
     private void CancelButton_Click(
         object sender,
         RoutedEventArgs e)
     {
+        _downloadSessionController.CancelAll();
         _operationCancellationTokenSource?.Cancel();
+    }
+
+    private async void PauseResumeDownloadButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Button
+            {
+                DataContext: UpdateRow row
+            })
+        {
+            return;
+        }
+
+        if (row.CanResumeItem)
+        {
+            if (_downloadSessionController.ResumeItem(
+                    row.Update))
+            {
+                row.CanResumeItem = false;
+                row.CanPause = true;
+                row.Status = "Queued to resume";
+                return;
+            }
+
+            if (!_downloadSessionController.IsRunning &&
+                row.CanDownload)
+            {
+                await RunDownloadSessionAsync([row]);
+            }
+
+            return;
+        }
+
+        if (_downloadSessionController.PauseItem(
+                row.Update))
+        {
+            row.CanPause = false;
+            row.Status = "Pausing";
+        }
+    }
+
+    private async void CancelDownloadButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Button
+            {
+                DataContext: UpdateRow row
+            })
+        {
+            return;
+        }
+
+        if (_downloadSessionController.CancelItem(
+                row.Update))
+        {
+            row.CanPause = false;
+            row.CanCancel = false;
+            row.Status = "Canceling";
+            return;
+        }
+
+        try
+        {
+            if (!_downloadSessionController.IsRunning &&
+                await _downloadSessionController
+                    .DiscardPartialDownloadAsync(
+                        row.Update))
+            {
+                row.CanResumeItem = false;
+                row.CanCancel = false;
+                row.HasPartialDownload = false;
+                row.InitialPartialBytes = 0;
+                row.Percentage = 0;
+                row.IsSelected = false;
+                row.Status = "Canceled";
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(
+                "Could not discard the partial download.",
+                exception);
+        }
     }
 
     private void SearchTextBox_TextChanged(
@@ -652,6 +760,21 @@ public partial class MainWindow : Window
             true;
     }
 
+    private static string FormatSpeed(double bytesPerSecond)
+    {
+        if (bytesPerSecond >= 1024 * 1024)
+        {
+            return $"{bytesPerSecond / (1024 * 1024):0.0} MB/s";
+        }
+
+        if (bytesPerSecond >= 1024)
+        {
+            return $"{bytesPerSecond / 1024:0.0} KB/s";
+        }
+
+        return $"{Math.Max(0, bytesPerSecond):0} B/s";
+    }
+
     private void RefreshView()
     {
         _applicationsView.Refresh();
@@ -670,7 +793,7 @@ public partial class MainWindow : Window
 
         CancelButton.IsEnabled = isBusy;
         SearchTextBox.IsEnabled = !isBusy;
-        UpdatesGrid.IsEnabled = !isBusy;
+        UpdatesGrid.IsEnabled = true;
 
         RefreshActionButtons();
     }
@@ -728,6 +851,10 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _isClosed = true;
+        _downloadSessionController.SessionEvent -=
+            DownloadSessionController_SessionEvent;
+        _downloadSessionController.CancelAll();
         _operationCancellationTokenSource?.Cancel();
         _operationCancellationTokenSource?.Dispose();
 
@@ -746,6 +873,12 @@ public partial class MainWindow : Window
         private bool _hasPartialDownload;
         private bool _isDownloading;
         private long _initialPartialBytes;
+        private bool _canPause;
+        private bool _canResumeItem;
+        private bool _canCancel;
+        private int? _queuePosition;
+        private double _bytesPerSecond;
+        private TimeSpan? _remainingTime;
 
         public UpdateRow(UpdateCheckItem update)
         {
@@ -839,6 +972,120 @@ public partial class MainWindow : Window
             set => SetField(
                 ref _initialPartialBytes,
                 value);
+        }
+
+        public bool CanPause
+        {
+            get => _canPause;
+            set
+            {
+                if (SetField(
+                        ref _canPause,
+                        value))
+                {
+                    NotifyPauseResumeChanged();
+                }
+            }
+        }
+
+        public bool CanResumeItem
+        {
+            get => _canResumeItem;
+            set
+            {
+                if (SetField(
+                        ref _canResumeItem,
+                        value))
+                {
+                    NotifyPauseResumeChanged();
+                }
+            }
+        }
+
+        public bool CanPauseOrResume =>
+            CanPause || CanResumeItem;
+
+        public string PauseResumeText =>
+            CanResumeItem
+                ? "Resume"
+                : "Pause";
+
+        public bool CanCancel
+        {
+            get => _canCancel;
+            set => SetField(
+                ref _canCancel,
+                value);
+        }
+
+        public int? QueuePosition
+        {
+            get => _queuePosition;
+            set
+            {
+                if (SetField(
+                        ref _queuePosition,
+                        value))
+                {
+                    OnPropertyChanged(
+                        nameof(QueueText));
+                }
+            }
+        }
+
+        public string QueueText =>
+            QueuePosition.HasValue
+                ? $"#{QueuePosition.Value}"
+                : string.Empty;
+
+        public double BytesPerSecond
+        {
+            get => _bytesPerSecond;
+            set
+            {
+                if (SetField(
+                        ref _bytesPerSecond,
+                        value))
+                {
+                    OnPropertyChanged(
+                        nameof(SpeedText));
+                }
+            }
+        }
+
+        public string SpeedText =>
+            BytesPerSecond > 0
+                ? FormatSpeed(BytesPerSecond)
+                : string.Empty;
+
+        public TimeSpan? RemainingTime
+        {
+            get => _remainingTime;
+            set
+            {
+                if (SetField(
+                        ref _remainingTime,
+                        value))
+                {
+                    OnPropertyChanged(
+                        nameof(RemainingTimeText));
+                }
+            }
+        }
+
+        public string RemainingTimeText =>
+            RemainingTime.HasValue
+                ? RemainingTime.Value.TotalHours >= 1
+                    ? RemainingTime.Value.ToString(@"hh\:mm\:ss")
+                    : RemainingTime.Value.ToString(@"mm\:ss")
+                : string.Empty;
+
+        private void NotifyPauseResumeChanged()
+        {
+            OnPropertyChanged(
+                nameof(CanPauseOrResume));
+            OnPropertyChanged(
+                nameof(PauseResumeText));
         }
 
         public bool IsSelected

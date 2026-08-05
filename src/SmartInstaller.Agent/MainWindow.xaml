@@ -55,7 +55,7 @@
                     Margin="10,0,0,0" MinWidth="145" Padding="18,10"
                     Click="DownloadSelectedButton_Click"
                     Content="Download selected" IsEnabled="False"
-                    ToolTip="Download or resume selected updates" />
+                    ToolTip="Download or resume selected updates concurrently" />
 
             <Button x:Name="InstallSelectedButton" Grid.Column="3"
                     Margin="10,0,0,0" MinWidth="130" Padding="18,10"
@@ -152,6 +152,43 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
+
+                        <DataGridTextColumn Width="0.7*"
+                            IsReadOnly="True"
+                            Binding="{Binding QueueText}"
+                            Header="Queue" />
+
+                        <DataGridTextColumn Width="0.9*"
+                            IsReadOnly="True"
+                            Binding="{Binding SpeedText}"
+                            Header="Speed" />
+
+                        <DataGridTextColumn Width="0.7*"
+                            IsReadOnly="True"
+                            Binding="{Binding RemainingTimeText}"
+                            Header="ETA" />
+
+                        <DataGridTemplateColumn Width="1.15*"
+                                                Header="Controls"
+                                                IsReadOnly="True">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Center">
+                                        <Button Margin="2"
+                                                Padding="10,4"
+                                                Content="{Binding PauseResumeText}"
+                                                IsEnabled="{Binding CanPauseOrResume}"
+                                                Click="PauseResumeDownloadButton_Click" />
+                                        <Button Margin="2"
+                                                Padding="10,4"
+                                                Content="Cancel"
+                                                IsEnabled="{Binding CanCancel}"
+                                                Click="CancelDownloadButton_Click" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>
@@ -160,6 +197,16 @@
         <StatusBar Grid.Row="3" Margin="0,12,0,0">
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="Ready." />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="QueueSummaryText"
+                           Text="Queue idle" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="TotalSpeedText"
+                           Text="Total: 0 B/s" />
             </StatusBarItem>
         </StatusBar>
     </Grid>
