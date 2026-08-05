@@ -23,6 +23,7 @@ public sealed class CheckUpdatesHandler(ApplicationDbContext dbContext)
 
         var applications = await dbContext.Applications
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(application => application.Versions)
                 .ThenInclude(version => version.InstallerProfiles)
                     .ThenInclude(profile => profile.Architecture)

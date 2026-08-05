@@ -169,6 +169,33 @@ public sealed class AgentApiTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task GetInstallerManifest_ForSeededNotepadPlusPlus_ReturnsVerifiedDownload()
+    {
+        var installerProfileId = Guid.Parse(
+            "90000000-0000-0000-0000-000000000003");
+
+        var response = await _client.GetAsync(
+            $"/api/agent/installer-manifest/{installerProfileId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content
+            .ReadFromJsonAsync<ApiResponse<InstallerManifestDto>>();
+
+        Assert.NotNull(result?.Data);
+        Assert.Equal("Notepad++", result.Data.ApplicationName);
+        Assert.Equal("8.9.7", result.Data.Version);
+        Assert.Equal("x64", result.Data.Architecture);
+        Assert.Equal(
+            "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.7/npp.8.9.7.Installer.x64.exe",
+            result.Data.DownloadUrl);
+        Assert.Equal(
+            "1884e093bae261c4942210334e1f2eae71354913e4ded3cc1a4a18c5320741ec",
+            result.Data.Sha256);
+        Assert.Equal(6933184, result.Data.FileSizeBytes);
+    }
+
     private async Task<(ApplicationVersionDto Version, InstallerProfileDto Profile)>
         CreateLatestVersionWithInstallerAsync(string versionName)
     {

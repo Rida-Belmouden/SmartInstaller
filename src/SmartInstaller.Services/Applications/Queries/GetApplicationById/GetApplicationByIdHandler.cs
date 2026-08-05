@@ -14,6 +14,7 @@ public sealed class GetApplicationByIdHandler(
     {
         return await dbContext.Applications
             .AsNoTracking()
+            .AsSplitQuery()
             .Where(application =>
                 application.PublicId == query.PublicId &&
                 application.IsActive)
