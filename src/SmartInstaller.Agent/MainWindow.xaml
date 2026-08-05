@@ -153,6 +153,21 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
+                        <DataGridTextColumn Width="0.7*"
+                            IsReadOnly="True"
+                            Binding="{Binding QueueText}"
+                            Header="Queue" />
+
+                        <DataGridTextColumn Width="0.9*"
+                            IsReadOnly="True"
+                            Binding="{Binding SpeedText}"
+                            Header="Speed" />
+
+                        <DataGridTextColumn Width="0.7*"
+                            IsReadOnly="True"
+                            Binding="{Binding RemainingTimeText}"
+                            Header="ETA" />
+
                         <DataGridTemplateColumn Width="1.15*"
                                                 Header="Controls"
                                                 IsReadOnly="True">
@@ -182,6 +197,16 @@
         <StatusBar Grid.Row="3" Margin="0,12,0,0">
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="Ready." />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="QueueSummaryText"
+                           Text="Queue idle" />
+            </StatusBarItem>
+            <Separator />
+            <StatusBarItem>
+                <TextBlock x:Name="TotalSpeedText"
+                           Text="Total: 0 B/s" />
             </StatusBarItem>
         </StatusBar>
     </Grid>

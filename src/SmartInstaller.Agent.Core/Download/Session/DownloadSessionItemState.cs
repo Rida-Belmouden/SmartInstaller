@@ -13,4 +13,7 @@ public sealed record DownloadSessionItemState(
     string? FilePath = null,
     bool CanPause = false,
     bool CanResume = false,
-    bool CanCancel = false);
+    bool CanCancel = false,
+    int? QueuePosition = null,
+    double BytesPerSecond = 0,
+    TimeSpan? RemainingTime = null);

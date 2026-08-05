@@ -13,7 +13,10 @@ public sealed class DownloadSessionController(
     : IDownloadSessionController, IDisposable
 {
     private readonly object _sync = new();
+    private readonly object _telemetrySync = new();
     private CancellationTokenSource? _sessionCancellation;
+    private IReadOnlyList<UpdateKey> _itemOrder = [];
+    private Dictionary<UpdateKey, TelemetryEntry> _telemetry = [];
 
     public event EventHandler<DownloadSessionEvent>? SessionEvent;
 
@@ -58,12 +61,18 @@ public sealed class DownloadSessionController(
             _sessionCancellation = sessionCancellation;
         }
 
+        InitializeTelemetry(updates);
+
         Publish(new DownloadSessionEvent(
             DownloadSessionEventType.SessionStarted,
             Message: $"Downloading {updates.Count} update(s) concurrently..."));
 
+        var initialPosition = 0;
+
         foreach (var update in updates)
         {
+            initialPosition++;
+
             PublishItem(new DownloadSessionItemState(
                 update,
                 "Queued",
@@ -72,8 +81,11 @@ public sealed class DownloadSessionController(
                 false,
                 0,
                 CanPause: true,
-                CanCancel: true));
+                CanCancel: true,
+                QueuePosition: initialPosition));
         }
+
+        PublishStatistics(CreateStatistics());
 
         try
         {
@@ -207,6 +219,7 @@ public sealed class DownloadSessionController(
 
     private void PublishProgress(DownloadQueueItemProgress item)
     {
+        var telemetry = TrackProgress(item);
         var status = item.Status switch
         {
             DownloadQueueStatus.Queued => "Queued",
@@ -241,7 +254,17 @@ public sealed class DownloadSessionController(
                 DownloadQueueStatus.Queued or
                 DownloadQueueStatus.Starting or
                 DownloadQueueStatus.Downloading or
-                DownloadQueueStatus.Paused));
+                DownloadQueueStatus.Paused,
+            QueuePosition: telemetry.QueuePosition,
+            BytesPerSecond:
+                item.Progress?.BytesPerSecond ?? 0,
+            RemainingTime:
+                CalculateRemainingTime(item.Progress)));
+
+        PublishQueuedPositions(
+            telemetry.QueuedPositions,
+            CreateKey(item.Update));
+        PublishStatistics(telemetry.Statistics);
     }
 
     private async Task PublishResultAsync(
@@ -309,6 +332,8 @@ public sealed class DownloadSessionController(
                 DownloadQueueCancellationReason.CancelItem &&
             item.Status != DownloadQueueStatus.Completed;
 
+        var telemetry = TrackResult(item);
+
         PublishItem(new DownloadSessionItemState(
             item.Update,
             status,
@@ -323,6 +348,11 @@ public sealed class DownloadSessionController(
                     : null),
             CanResume: hasManageablePartial,
             CanCancel: hasManageablePartial));
+
+        PublishQueuedPositions(
+            telemetry.QueuedPositions,
+            CreateKey(item.Update));
+        PublishStatistics(telemetry.Statistics);
     }
 
     private async Task PublishInterruptedItemsAsync(
@@ -358,6 +388,198 @@ public sealed class DownloadSessionController(
             DownloadSessionEventType.ItemUpdated,
             Item: item));
 
+    private void InitializeTelemetry(
+        IReadOnlyCollection<UpdateCheckItem> updates)
+    {
+        lock (_telemetrySync)
+        {
+            _itemOrder = updates
+                .Select(CreateKey)
+                .Distinct()
+                .ToArray();
+
+            _telemetry = updates
+                .GroupBy(CreateKey)
+                .ToDictionary(
+                    group => group.Key,
+                    group => new TelemetryEntry(
+                        group.First(),
+                        DownloadQueueStatus.Queued));
+        }
+    }
+
+    private TelemetryUpdate TrackProgress(
+        DownloadQueueItemProgress progress)
+    {
+        lock (_telemetrySync)
+        {
+            var key = CreateKey(progress.Update);
+
+            if (!_telemetry.TryGetValue(
+                    key,
+                    out var entry))
+            {
+                entry = new TelemetryEntry(
+                    progress.Update,
+                    progress.Status);
+                _telemetry[key] = entry;
+            }
+
+            entry.Status = progress.Status;
+            entry.IsTerminal = false;
+            entry.BytesPerSecond =
+                progress.Progress?.BytesPerSecond ?? 0;
+
+            return CreateTelemetryUpdate(key);
+        }
+    }
+
+    private TelemetryUpdate TrackResult(
+        DownloadQueueItemResult result)
+    {
+        lock (_telemetrySync)
+        {
+            var key = CreateKey(result.Update);
+
+            if (!_telemetry.TryGetValue(
+                    key,
+                    out var entry))
+            {
+                entry = new TelemetryEntry(
+                    result.Update,
+                    result.Status);
+                _telemetry[key] = entry;
+            }
+
+            entry.Status = result.Status;
+            entry.IsTerminal = true;
+            entry.BytesPerSecond = 0;
+
+            return CreateTelemetryUpdate(key);
+        }
+    }
+
+    private TelemetryUpdate CreateTelemetryUpdate(
+        UpdateKey currentKey)
+    {
+        var queuedPositions = _itemOrder
+            .Where(key =>
+                _telemetry.TryGetValue(
+                    key,
+                    out var entry) &&
+                !entry.IsTerminal &&
+                entry.Status == DownloadQueueStatus.Queued)
+            .Select((key, index) => new QueuePosition(
+                key,
+                _telemetry[key].Update,
+                index + 1))
+            .ToArray();
+
+        var currentPosition = queuedPositions
+            .FirstOrDefault(item =>
+                item.Key == currentKey)
+            ?.Position;
+
+        return new TelemetryUpdate(
+            currentPosition,
+            queuedPositions,
+            CreateStatisticsCore());
+    }
+
+    private DownloadSessionStatistics CreateStatistics()
+    {
+        lock (_telemetrySync)
+        {
+            return CreateStatisticsCore();
+        }
+    }
+
+    private DownloadSessionStatistics CreateStatisticsCore()
+    {
+        var entries = _telemetry.Values.ToArray();
+
+        return new DownloadSessionStatistics(
+            entries.Length,
+            entries.Count(item =>
+                !item.IsTerminal &&
+                item.Status == DownloadQueueStatus.Queued),
+            entries.Count(item =>
+                !item.IsTerminal &&
+                item.Status is
+                    DownloadQueueStatus.Starting or
+                    DownloadQueueStatus.Downloading or
+                    DownloadQueueStatus.Completed),
+            entries.Count(item =>
+                !item.IsTerminal &&
+                item.Status == DownloadQueueStatus.Paused),
+            entries.Count(item =>
+                item.IsTerminal &&
+                item.Status == DownloadQueueStatus.Completed),
+            entries.Count(item =>
+                item.IsTerminal &&
+                item.Status == DownloadQueueStatus.Failed),
+            entries.Count(item =>
+                item.IsTerminal &&
+                item.Status == DownloadQueueStatus.Cancelled),
+            entries
+                .Where(item =>
+                    !item.IsTerminal &&
+                    item.Status == DownloadQueueStatus.Downloading)
+                .Sum(item => item.BytesPerSecond));
+    }
+
+    private void PublishQueuedPositions(
+        IReadOnlyCollection<QueuePosition> positions,
+        UpdateKey currentKey)
+    {
+        foreach (var position in positions)
+        {
+            if (position.Key == currentKey)
+            {
+                continue;
+            }
+
+            PublishItem(new DownloadSessionItemState(
+                position.Update,
+                $"Queued (#{position.Position})",
+                0,
+                true,
+                false,
+                0,
+                CanPause: true,
+                CanCancel: true,
+                QueuePosition: position.Position));
+        }
+    }
+
+    private void PublishStatistics(
+        DownloadSessionStatistics statistics) =>
+        Publish(new DownloadSessionEvent(
+            DownloadSessionEventType.SnapshotUpdated,
+            Statistics: statistics));
+
+    private static TimeSpan? CalculateRemainingTime(
+        DownloadProgress? progress)
+    {
+        if (progress?.TotalBytes is not > 0 ||
+            progress.BytesPerSecond <= 0 ||
+            progress.BytesReceived >= progress.TotalBytes.Value)
+        {
+            return null;
+        }
+
+        return TimeSpan.FromSeconds(
+            (progress.TotalBytes.Value -
+             progress.BytesReceived) /
+            progress.BytesPerSecond);
+    }
+
+    private static UpdateKey CreateKey(
+        UpdateCheckItem update) =>
+        new(
+            update.ApplicationId,
+            update.InstallerProfileId);
+
     private void Publish(DownloadSessionEvent sessionEvent) =>
         SessionEvent?.Invoke(this, sessionEvent);
 
@@ -366,4 +588,32 @@ public sealed class DownloadSessionController(
     {
         public void Report(T value) => callback(value);
     }
+
+    private readonly record struct UpdateKey(
+        Guid ApplicationId,
+        Guid? InstallerProfileId);
+
+    private sealed class TelemetryEntry(
+        UpdateCheckItem update,
+        DownloadQueueStatus status)
+    {
+        public UpdateCheckItem Update { get; } = update;
+
+        public DownloadQueueStatus Status { get; set; } =
+            status;
+
+        public bool IsTerminal { get; set; }
+
+        public double BytesPerSecond { get; set; }
+    }
+
+    private sealed record QueuePosition(
+        UpdateKey Key,
+        UpdateCheckItem Update,
+        int Position);
+
+    private sealed record TelemetryUpdate(
+        int? QueuePosition,
+        IReadOnlyCollection<QueuePosition> QueuedPositions,
+        DownloadSessionStatistics Statistics);
 }

@@ -284,6 +284,9 @@ public partial class MainWindow : Window
             row.CanPause = item.CanPause;
             row.CanResumeItem = item.CanResume;
             row.CanCancel = item.CanCancel;
+            row.QueuePosition = item.QueuePosition;
+            row.BytesPerSecond = item.BytesPerSecond;
+            row.RemainingTime = item.RemainingTime;
             if (!item.IsDownloading)
             {
                 row.IsSelected =
@@ -299,6 +302,22 @@ public partial class MainWindow : Window
                     $"{row.Status} {row.ApplicationName}: " +
                     $"{row.ProgressText}";
             }
+
+            return;
+        }
+
+        if (sessionEvent.Statistics is not null)
+        {
+            var statistics = sessionEvent.Statistics;
+
+            QueueSummaryText.Text =
+                $"Active: {statistics.Active}  " +
+                $"Queued: {statistics.Queued}  " +
+                $"Paused: {statistics.Paused}  " +
+                $"Completed: {statistics.Completed}";
+
+            TotalSpeedText.Text =
+                $"Total: {FormatSpeed(statistics.BytesPerSecond)}";
 
             return;
         }
@@ -727,6 +746,21 @@ public partial class MainWindow : Window
             true;
     }
 
+    private static string FormatSpeed(double bytesPerSecond)
+    {
+        if (bytesPerSecond >= 1024 * 1024)
+        {
+            return $"{bytesPerSecond / (1024 * 1024):0.0} MB/s";
+        }
+
+        if (bytesPerSecond >= 1024)
+        {
+            return $"{bytesPerSecond / 1024:0.0} KB/s";
+        }
+
+        return $"{Math.Max(0, bytesPerSecond):0} B/s";
+    }
+
     private void RefreshView()
     {
         _applicationsView.Refresh();
@@ -827,6 +861,9 @@ public partial class MainWindow : Window
         private bool _canPause;
         private bool _canResumeItem;
         private bool _canCancel;
+        private int? _queuePosition;
+        private double _bytesPerSecond;
+        private TimeSpan? _remainingTime;
 
         public UpdateRow(UpdateCheckItem update)
         {
@@ -965,6 +1002,68 @@ public partial class MainWindow : Window
                 ref _canCancel,
                 value);
         }
+
+        public int? QueuePosition
+        {
+            get => _queuePosition;
+            set
+            {
+                if (SetField(
+                        ref _queuePosition,
+                        value))
+                {
+                    OnPropertyChanged(
+                        nameof(QueueText));
+                }
+            }
+        }
+
+        public string QueueText =>
+            QueuePosition.HasValue
+                ? $"#{QueuePosition.Value}"
+                : string.Empty;
+
+        public double BytesPerSecond
+        {
+            get => _bytesPerSecond;
+            set
+            {
+                if (SetField(
+                        ref _bytesPerSecond,
+                        value))
+                {
+                    OnPropertyChanged(
+                        nameof(SpeedText));
+                }
+            }
+        }
+
+        public string SpeedText =>
+            BytesPerSecond > 0
+                ? FormatSpeed(BytesPerSecond)
+                : string.Empty;
+
+        public TimeSpan? RemainingTime
+        {
+            get => _remainingTime;
+            set
+            {
+                if (SetField(
+                        ref _remainingTime,
+                        value))
+                {
+                    OnPropertyChanged(
+                        nameof(RemainingTimeText));
+                }
+            }
+        }
+
+        public string RemainingTimeText =>
+            RemainingTime.HasValue
+                ? RemainingTime.Value.TotalHours >= 1
+                    ? RemainingTime.Value.ToString(@"hh\:mm\:ss")
+                    : RemainingTime.Value.ToString(@"mm\:ss")
+                : string.Empty;
 
         private void NotifyPauseResumeChanged()
         {

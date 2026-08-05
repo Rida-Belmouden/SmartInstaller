@@ -4,6 +4,7 @@ public enum DownloadSessionEventType
 {
     SessionStarted,
     ItemUpdated,
+    SnapshotUpdated,
     SessionCompleted,
     SessionCancelled,
     SessionFailed
