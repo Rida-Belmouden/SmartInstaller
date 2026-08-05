@@ -1,4 +1,5 @@
 using SmartInstaller.Agent.Core.Download.Models;
+using SmartInstaller.Agent.Core.Download.Cache;
 using SmartInstaller.Agent.Core.Download.Queue;
 using SmartInstaller.Agent.Core.Models;
 using SmartInstaller.Agent.Core.Services;
@@ -7,7 +8,8 @@ namespace SmartInstaller.Agent.Core.Download.Session;
 
 public sealed class DownloadSessionController(
     IConcurrentDownloadManager downloadManager,
-    IUpdateDownloadStateService downloadStateService)
+    IUpdateDownloadStateService downloadStateService,
+    IFileCacheService fileCacheService)
     : IDownloadSessionController, IDisposable
 {
     private readonly object _sync = new();
@@ -68,7 +70,9 @@ public sealed class DownloadSessionController(
                 0,
                 true,
                 false,
-                0));
+                0,
+                CanPause: true,
+                CanCancel: true));
         }
 
         try
@@ -97,6 +101,7 @@ public sealed class DownloadSessionController(
                 Message:
                     $"{result.CompletedCount} completed, " +
                     $"{result.FailedCount} failed, " +
+                    $"{result.PausedCount} paused, " +
                     $"{result.CancelledCount} cancelled."));
 
             return result;
@@ -150,6 +155,45 @@ public sealed class DownloadSessionController(
         }
     }
 
+    public bool PauseItem(UpdateCheckItem update) =>
+        downloadManager.PauseItem(update);
+
+    public bool ResumeItem(UpdateCheckItem update) =>
+        downloadManager.ResumeItem(update);
+
+    public bool CancelItem(UpdateCheckItem update) =>
+        downloadManager.CancelItem(update);
+
+    public async Task<bool> DiscardPartialDownloadAsync(
+        UpdateCheckItem update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        var state = await downloadStateService.GetStateAsync(
+            update,
+            cancellationToken);
+
+        if (state?.HasPartialFile != true)
+        {
+            return false;
+        }
+
+        fileCacheService.DeleteTemporaryFile(
+            state.FileName);
+
+        PublishItem(new DownloadSessionItemState(
+            update,
+            "Canceled",
+            0,
+            false,
+            false,
+            0,
+            state.Manifest));
+
+        return true;
+    }
+
     public void Dispose()
     {
         CancelAll();
@@ -168,6 +212,7 @@ public sealed class DownloadSessionController(
             DownloadQueueStatus.Queued => "Queued",
             DownloadQueueStatus.Starting => "Starting",
             DownloadQueueStatus.Downloading => "Downloading",
+            DownloadQueueStatus.Paused => "Pausing",
             DownloadQueueStatus.Completed => "Verifying",
             DownloadQueueStatus.Failed =>
                 item.Message ?? "Download failed",
@@ -182,9 +227,21 @@ public sealed class DownloadSessionController(
             item.Status is not
                 DownloadQueueStatus.Completed and not
                 DownloadQueueStatus.Failed and not
-                DownloadQueueStatus.Cancelled,
+                DownloadQueueStatus.Cancelled and not
+                DownloadQueueStatus.Paused,
             false,
-            0));
+            0,
+            CanPause: item.Status is
+                DownloadQueueStatus.Queued or
+                DownloadQueueStatus.Starting or
+                DownloadQueueStatus.Downloading,
+            CanResume: item.Status is
+                DownloadQueueStatus.Paused,
+            CanCancel: item.Status is
+                DownloadQueueStatus.Queued or
+                DownloadQueueStatus.Starting or
+                DownloadQueueStatus.Downloading or
+                DownloadQueueStatus.Paused));
     }
 
     private async Task PublishResultAsync(
@@ -193,6 +250,19 @@ public sealed class DownloadSessionController(
         var state = await downloadStateService.GetStateAsync(
             item.Update,
             CancellationToken.None);
+
+        if (item.CancellationReason ==
+                DownloadQueueCancellationReason.CancelItem &&
+            state is not null)
+        {
+            fileCacheService.DeleteTemporaryFile(
+                state.FileName);
+
+            state = state with
+            {
+                PartialBytes = 0
+            };
+        }
 
         var downloadResult = item.DownloadResult;
         var percentage = state?.FinalFileExists == true
@@ -208,10 +278,19 @@ public sealed class DownloadSessionController(
             DownloadQueueStatus.Completed =>
                 "Downloaded and verified",
             DownloadQueueStatus.Cancelled
+                when item.CancellationReason ==
+                     DownloadQueueCancellationReason.CancelItem =>
+                "Canceled",
+            DownloadQueueStatus.Cancelled
                 when state?.HasPartialFile == true =>
                 "Paused",
             DownloadQueueStatus.Cancelled =>
                 "Canceled",
+            DownloadQueueStatus.Paused
+                when state?.HasPartialFile == true =>
+                "Paused",
+            DownloadQueueStatus.Paused =>
+                "Paused",
             DownloadQueueStatus.Failed
                 when state?.HasPartialFile == true &&
                      !string.IsNullOrWhiteSpace(item.ErrorMessage) =>
@@ -224,6 +303,12 @@ public sealed class DownloadSessionController(
             _ => item.Status.ToString()
         };
 
+        var hasManageablePartial =
+            state?.HasPartialFile == true &&
+            item.CancellationReason !=
+                DownloadQueueCancellationReason.CancelItem &&
+            item.Status != DownloadQueueStatus.Completed;
+
         PublishItem(new DownloadSessionItemState(
             item.Update,
             status,
@@ -235,7 +320,9 @@ public sealed class DownloadSessionController(
             downloadResult?.DownloadResult.FilePath ??
                 (state?.FinalFileExists == true
                     ? state.FinalPath
-                    : null)));
+                    : null),
+            CanResume: hasManageablePartial,
+            CanCancel: hasManageablePartial));
     }
 
     private async Task PublishInterruptedItemsAsync(
@@ -260,7 +347,9 @@ public sealed class DownloadSessionController(
                 state?.Manifest,
                 state?.FinalFileExists == true
                     ? state.FinalPath
-                    : null));
+                    : null,
+                CanResume: state?.HasPartialFile == true,
+                CanCancel: state?.HasPartialFile == true));
         }
     }
 

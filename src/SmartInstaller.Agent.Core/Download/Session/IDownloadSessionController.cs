@@ -13,5 +13,15 @@ public interface IDownloadSessionController
         IReadOnlyCollection<UpdateCheckItem> updates,
         CancellationToken cancellationToken = default);
 
+    bool PauseItem(UpdateCheckItem update);
+
+    bool ResumeItem(UpdateCheckItem update);
+
+    bool CancelItem(UpdateCheckItem update);
+
+    Task<bool> DiscardPartialDownloadAsync(
+        UpdateCheckItem update,
+        CancellationToken cancellationToken = default);
+
     void CancelAll();
 }

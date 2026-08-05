@@ -133,6 +133,157 @@ public sealed class ConcurrentDownloadManagerTests
     }
 
     [Fact]
+    public async Task ResumeItem_ContinuesOnlyPausedItem()
+    {
+        var updates = CreateUpdates(3);
+        var paused =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var manager = CreateManager(
+            new TrackingDownloadService(
+                TimeSpan.FromMilliseconds(100)),
+            maximumParallel: 2);
+
+        var downloadTask = manager.DownloadAsync(
+            updates,
+            new InlineProgress<DownloadQueueItemProgress>(item =>
+            {
+                if (item.Update.ApplicationId ==
+                        updates[0].ApplicationId &&
+                    item.Status == DownloadQueueStatus.Paused)
+                {
+                    paused.TrySetResult();
+                }
+            }));
+
+        Assert.True(manager.PauseItem(updates[0]));
+        await paused.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(manager.ResumeItem(updates[0]));
+
+        var result = await downloadTask;
+        Assert.Equal(3, result.CompletedCount);
+        Assert.Equal(0, result.CancelledCount);
+    }
+
+    [Fact]
+    public async Task CancelItem_CancelsOnlyRequestedItem()
+    {
+        var updates = CreateUpdates(3);
+        var manager = CreateManager(
+            new TrackingDownloadService(
+                TimeSpan.FromMilliseconds(100)),
+            maximumParallel: 2);
+
+        var downloadTask = manager.DownloadAsync(updates);
+
+        Assert.True(manager.CancelItem(updates[1]));
+
+        var result = await downloadTask;
+        var cancelled = Assert.Single(result.Items, item =>
+            item.Status == DownloadQueueStatus.Cancelled);
+
+        Assert.Equal(
+            updates[1].ApplicationId,
+            cancelled.Update.ApplicationId);
+        Assert.Equal(
+            DownloadQueueCancellationReason.CancelItem,
+            cancelled.CancellationReason);
+        Assert.Equal(2, result.CompletedCount);
+    }
+
+    [Fact]
+    public async Task CancelItem_WhenPaused_EndsOnlyPausedItem()
+    {
+        var updates = CreateUpdates(3);
+        var paused =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var manager = CreateManager(
+            new TrackingDownloadService(
+                TimeSpan.FromMilliseconds(100)),
+            maximumParallel: 2);
+
+        var downloadTask = manager.DownloadAsync(
+            updates,
+            new InlineProgress<DownloadQueueItemProgress>(item =>
+            {
+                if (item.Update.ApplicationId ==
+                        updates[0].ApplicationId &&
+                    item.Status == DownloadQueueStatus.Paused)
+                {
+                    paused.TrySetResult();
+                }
+            }));
+
+        Assert.True(manager.PauseItem(updates[0]));
+        await paused.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(manager.CancelItem(updates[0]));
+
+        var result = await downloadTask;
+        var cancelled = Assert.Single(result.Items, item =>
+            item.Status == DownloadQueueStatus.Cancelled);
+
+        Assert.Equal(
+            DownloadQueueCancellationReason.CancelItem,
+            cancelled.CancellationReason);
+        Assert.Equal(2, result.CompletedCount);
+    }
+
+    [Fact]
+    public async Task CancelAll_WhenItemPaused_ReleasesPausedItem()
+    {
+        var updates = CreateUpdates(2);
+        var paused =
+            new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+        var manager = CreateManager(
+            new TrackingDownloadService(
+                TimeSpan.FromSeconds(5)),
+            maximumParallel: 2);
+        using var cancellation = new CancellationTokenSource();
+
+        var downloadTask = manager.DownloadAsync(
+            updates,
+            new InlineProgress<DownloadQueueItemProgress>(item =>
+            {
+                if (item.Update.ApplicationId ==
+                        updates[0].ApplicationId &&
+                    item.Status == DownloadQueueStatus.Paused)
+                {
+                    paused.TrySetResult();
+                }
+            }),
+            cancellation.Token);
+
+        Assert.True(manager.PauseItem(updates[0]));
+        await paused.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        cancellation.Cancel();
+
+        var result = await downloadTask.WaitAsync(
+            TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, result.CancelledCount);
+        Assert.All(result.Items, item =>
+            Assert.Equal(
+                DownloadQueueCancellationReason.CancelAll,
+                item.CancellationReason));
+    }
+
+    [Fact]
+    public void ItemControl_WithoutActiveSession_ReturnsFalse()
+    {
+        var update = CreateUpdates(1)[0];
+        var manager = CreateManager(
+            new TrackingDownloadService(TimeSpan.Zero),
+            maximumParallel: 1);
+
+        Assert.False(manager.PauseItem(update));
+        Assert.False(manager.ResumeItem(update));
+        Assert.False(manager.CancelItem(update));
+    }
+
+    [Fact]
     public void Constructor_InvalidMaximumParallelDownloads_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>

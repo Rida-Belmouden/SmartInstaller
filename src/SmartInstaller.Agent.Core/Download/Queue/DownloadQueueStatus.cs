@@ -5,6 +5,7 @@ public enum DownloadQueueStatus
     Queued,
     Starting,
     Downloading,
+    Paused,
     Completed,
     Failed,
     Cancelled

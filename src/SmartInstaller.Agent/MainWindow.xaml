@@ -152,6 +152,28 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="1.15*"
+                                                Header="Controls"
+                                                IsReadOnly="True">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Center">
+                                        <Button Margin="2"
+                                                Padding="10,4"
+                                                Content="{Binding PauseResumeText}"
+                                                IsEnabled="{Binding CanPauseOrResume}"
+                                                Click="PauseResumeDownloadButton_Click" />
+                                        <Button Margin="2"
+                                                Padding="10,4"
+                                                Content="Cancel"
+                                                IsEnabled="{Binding CanCancel}"
+                                                Click="CancelDownloadButton_Click" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>

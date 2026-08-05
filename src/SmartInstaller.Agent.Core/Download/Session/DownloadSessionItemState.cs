@@ -10,4 +10,7 @@ public sealed record DownloadSessionItemState(
     bool HasPartialDownload,
     long InitialPartialBytes,
     InstallerManifest? Manifest = null,
-    string? FilePath = null);
+    string? FilePath = null,
+    bool CanPause = false,
+    bool CanResume = false,
+    bool CanCancel = false);

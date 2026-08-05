@@ -15,4 +15,8 @@ public sealed record ConcurrentDownloadResult(
     public int CancelledCount =>
         Items.Count(item =>
             item.Status == DownloadQueueStatus.Cancelled);
+
+    public int PausedCount =>
+        Items.Count(item =>
+            item.Status == DownloadQueueStatus.Paused);
 }

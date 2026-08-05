@@ -173,10 +173,16 @@ public partial class MainWindow : Window
             return;
         }
 
-        BeginOperation(
-            $"Downloading {selected.Length} update(s) concurrently...");
+        await RunDownloadSessionAsync(selected);
+    }
 
-        foreach (var row in selected)
+    private async Task RunDownloadSessionAsync(
+        IReadOnlyCollection<UpdateRow> rows)
+    {
+        BeginOperation(
+            $"Downloading {rows.Count} update(s) concurrently...");
+
+        foreach (var row in rows)
         {
             var wasPaused =
                 row.HasPartialDownload;
@@ -194,7 +200,7 @@ public partial class MainWindow : Window
         try
         {
             await _downloadSessionController.StartAsync(
-                selected
+                rows
                     .Select(row => row.Update)
                     .ToArray(),
                 CurrentToken);
@@ -212,7 +218,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            foreach (var row in selected)
+            foreach (var row in rows)
             {
                 row.IsDownloading = false;
                 row.NotifyAvailabilityChanged();
@@ -275,6 +281,9 @@ public partial class MainWindow : Window
             }
             row.Manifest = item.Manifest ?? row.Manifest;
             row.FilePath = item.FilePath;
+            row.CanPause = item.CanPause;
+            row.CanResumeItem = item.CanResume;
+            row.CanCancel = item.CanCancel;
             if (!item.IsDownloading)
             {
                 row.IsSelected =
@@ -601,6 +610,91 @@ public partial class MainWindow : Window
         _operationCancellationTokenSource?.Cancel();
     }
 
+    private async void PauseResumeDownloadButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Button
+            {
+                DataContext: UpdateRow row
+            })
+        {
+            return;
+        }
+
+        if (row.CanResumeItem)
+        {
+            if (_downloadSessionController.ResumeItem(
+                    row.Update))
+            {
+                row.CanResumeItem = false;
+                row.CanPause = true;
+                row.Status = "Queued to resume";
+                return;
+            }
+
+            if (!_downloadSessionController.IsRunning &&
+                row.CanDownload)
+            {
+                await RunDownloadSessionAsync([row]);
+            }
+
+            return;
+        }
+
+        if (_downloadSessionController.PauseItem(
+                row.Update))
+        {
+            row.CanPause = false;
+            row.Status = "Pausing";
+        }
+    }
+
+    private async void CancelDownloadButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Button
+            {
+                DataContext: UpdateRow row
+            })
+        {
+            return;
+        }
+
+        if (_downloadSessionController.CancelItem(
+                row.Update))
+        {
+            row.CanPause = false;
+            row.CanCancel = false;
+            row.Status = "Canceling";
+            return;
+        }
+
+        try
+        {
+            if (!_downloadSessionController.IsRunning &&
+                await _downloadSessionController
+                    .DiscardPartialDownloadAsync(
+                        row.Update))
+            {
+                row.CanResumeItem = false;
+                row.CanCancel = false;
+                row.HasPartialDownload = false;
+                row.InitialPartialBytes = 0;
+                row.Percentage = 0;
+                row.IsSelected = false;
+                row.Status = "Canceled";
+            }
+        }
+        catch (Exception exception)
+        {
+            ShowError(
+                "Could not discard the partial download.",
+                exception);
+        }
+    }
+
     private void SearchTextBox_TextChanged(
         object sender,
         TextChangedEventArgs e)
@@ -651,7 +745,7 @@ public partial class MainWindow : Window
 
         CancelButton.IsEnabled = isBusy;
         SearchTextBox.IsEnabled = !isBusy;
-        UpdatesGrid.IsEnabled = !isBusy;
+        UpdatesGrid.IsEnabled = true;
 
         RefreshActionButtons();
     }
@@ -730,6 +824,9 @@ public partial class MainWindow : Window
         private bool _hasPartialDownload;
         private bool _isDownloading;
         private long _initialPartialBytes;
+        private bool _canPause;
+        private bool _canResumeItem;
+        private bool _canCancel;
 
         public UpdateRow(UpdateCheckItem update)
         {
@@ -823,6 +920,58 @@ public partial class MainWindow : Window
             set => SetField(
                 ref _initialPartialBytes,
                 value);
+        }
+
+        public bool CanPause
+        {
+            get => _canPause;
+            set
+            {
+                if (SetField(
+                        ref _canPause,
+                        value))
+                {
+                    NotifyPauseResumeChanged();
+                }
+            }
+        }
+
+        public bool CanResumeItem
+        {
+            get => _canResumeItem;
+            set
+            {
+                if (SetField(
+                        ref _canResumeItem,
+                        value))
+                {
+                    NotifyPauseResumeChanged();
+                }
+            }
+        }
+
+        public bool CanPauseOrResume =>
+            CanPause || CanResumeItem;
+
+        public string PauseResumeText =>
+            CanResumeItem
+                ? "Resume"
+                : "Pause";
+
+        public bool CanCancel
+        {
+            get => _canCancel;
+            set => SetField(
+                ref _canCancel,
+                value);
+        }
+
+        private void NotifyPauseResumeChanged()
+        {
+            OnPropertyChanged(
+                nameof(CanPauseOrResume));
+            OnPropertyChanged(
+                nameof(PauseResumeText));
         }
 
         public bool IsSelected

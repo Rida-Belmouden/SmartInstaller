@@ -8,4 +8,10 @@ public interface IConcurrentDownloadManager
         IReadOnlyCollection<UpdateCheckItem> updates,
         IProgress<DownloadQueueItemProgress>? progress = null,
         CancellationToken cancellationToken = default);
+
+    bool PauseItem(UpdateCheckItem update);
+
+    bool ResumeItem(UpdateCheckItem update);
+
+    bool CancelItem(UpdateCheckItem update);
 }

@@ -9,6 +9,12 @@ public sealed record DownloadQueueItemResult(
     UpdateDownloadResult? DownloadResult,
     string? ErrorMessage)
 {
+    public DownloadQueueCancellationReason CancellationReason
+    {
+        get;
+        init;
+    }
+
     public bool IsSuccess =>
         Status == DownloadQueueStatus.Completed &&
         DownloadResult?.DownloadResult.IsSuccess == true;
